@@ -27,10 +27,11 @@ const { notFoundApi, errorHandler } = require('./src/middleware');
 const app = express();
 
 const PORT = Number.parseInt(process.env.PORT || '3000', 10);
-// Las plataformas de contenedores (Aiven Runtime, Render, Koyeb) enrutan al
-// contenedor desde fuera: hay que escuchar en 0.0.0.0, no solo en localhost.
-// Se usa SERVER_HOST para no chocar con la variable HOST del apartado de BD.
-const HOST = process.env.SERVER_HOST || '0.0.0.0';
+// Interfaz de escucha. Vacío = dual-stack por defecto de Node (`::`), que
+// acepta tanto IPv4 como IPv6 y funciona igual en local y en contenedores.
+// Se puede forzar con SERVER_HOST=0.0.0.0 si una plataforma lo exige.
+// (No se usa la variable HOST: esa la usa db.js como alias del host de BD.)
+const HOST = (process.env.SERVER_HOST || '').trim();
 const IS_PROD = process.env.NODE_ENV === 'production';
 const APP_NAME = 'SynapseAI Lab';
 const SLOGAN = 'Plataforma global de entrenamiento de IA y etiquetado de datos';
@@ -282,15 +283,18 @@ async function start() {
     console.warn('[google] GOOGLE_CLIENT_ID no definido: el botón de Google no podrá renderizarse.');
   }
 
-  const server = app.listen(PORT, HOST, () => {
+  const onListening = () => {
     const addr = server.address();
     console.log(
-      `[server] SynapseAI Lab escuchando en http://${HOST}:${PORT} ` +
+      `[server] SynapseAI Lab escuchando en http://${HOST || '[::]'}:${PORT} ` +
         `(puerto real: ${addr ? addr.port : PORT})  (${IS_PROD ? 'producción' : 'desarrollo'})`
     );
     console.log(`[server] Bono de bienvenida: $${BONUS_USD.toFixed(2)} USD`);
     console.log(`[server] Store de sesión: ${SESSION_STORE}`);
-  });
+  };
+
+  // Sin SERVER_HOST se deja el bind por defecto de Node (dual-stack).
+  const server = HOST ? app.listen(PORT, HOST, onListening) : app.listen(PORT, onListening);
 
   const shutdown = async (signal) => {
     console.log(`\n[server] Señal ${signal} recibida. Cerrando...`);

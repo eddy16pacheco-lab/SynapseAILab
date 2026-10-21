@@ -12,11 +12,14 @@ FROM node:24-alpine
 #                          "no saludable" y Aiven muestra su página de estado.
 #                          Fijarlo aquí evita que un PORT heredado del entorno
 #                          desplace la escucha.
-# HOST=0.0.0.0         -> el contenedor debe aceptar conexiones de la red externa
+# SERVER_HOST          -> se deja vacío a propósito: Node hace bind dual-stack
+#                          ([::]), que acepta IPv4 e IPv6. Forzar 0.0.0.0
+#                          rompería el acceso por localhost en IPv6.
+#                          No se define HOST porque db.js lo usa como alias del
+#                          host de la base de datos.
 ENV NODE_ENV=production \
     PORT=3000 \
-    HOST=0.0.0.0 \
-    SERVER_HOST=0.0.0.0 \
+    SERVER_HOST= \
     NPM_CONFIG_UPDATE_NOTIFIER=false
 
 WORKDIR /app
