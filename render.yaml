@@ -1,0 +1,67 @@
+# =====================================================================
+#  SynapseAI Lab — Blueprint para Render (plan gratuito)
+#  https://render.com/docs/blueprint-spec
+#
+#  1. Sube el proyecto a GitHub.
+#  2. En Render: "New" → "Blueprint" → apunta a tu repositorio.
+#  3. Rellena las variables marcadas con `sync: false`.
+#  4. Render genera SESSION_SECRET automáticamente y despliega.
+# =====================================================================
+services:
+  - type: web
+    name: synapseai-lab
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm ci --omit=dev
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      # Imprescindible en plan gratuito: la instancia se apaga a los 15 min
+      # de inactividad y con sesiones en memoria perderías el login.
+      - key: SESSION_STORE
+        value: mysql
+      - key: SESSION_POOL_SIZE
+        value: "3"
+      - key: DB_SSL
+        value: "true"
+      - key: DB_SSL_REJECT_UNAUTHORIZED
+        value: "false"
+      - key: BONUS_USD
+        value: "1.00"
+      - key: SESSION_SECRET
+        generateValue: true
+      # --- Aiven MySQL Free Tier ---
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "3306"
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_NAME
+        sync: false
+      # --- Google Identity Services ---
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      # --- SMTP (Brevo / Gmail) ---
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_SECURE
+        value: "false"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: MAIL_FROM_NAME
+        value: SynapseAI Lab

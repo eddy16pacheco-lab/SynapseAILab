@@ -1,0 +1,40 @@
+{
+  "name": "synapseai-lab",
+  "version": "1.0.0",
+  "description": "SynapseAI Lab — Plataforma global de entrenamiento de IA y etiquetado de datos",
+  "main": "server.js",
+  "private": true,
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test \"tests/**/*.test.js\"",
+    "db:init": "node scripts/init-db.js",
+    "db:check": "node scripts/db-check.js",
+    "smtp:check": "node scripts/smtp-check.js"
+  },
+  "keywords": [
+    "ai",
+    "data-labeling",
+    "training-data",
+    "express",
+    "mysql",
+    "aiven",
+    "google-sign-in"
+  ],
+  "author": "SynapseAI Lab",
+  "license": "MIT",
+  "dependencies": {
+    "connect-mysql2": "^2.2.6",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
+    "express-session": "^1.18.0",
+    "google-auth-library": "^9.11.0",
+    "helmet": "^7.1.0",
+    "mysql2": "^3.11.3",
+    "nodemailer": "^6.9.14"
+  }
+}
