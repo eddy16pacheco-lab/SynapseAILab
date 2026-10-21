@@ -310,6 +310,18 @@ complejidad, duplicados, transacciones, correo al administrador) no cambia.
 
 ## 8. Buenas prácticas de seguridad implementadas
 
+> ### ⚠️ Nunca escribas credenciales reales en `.env.example`
+> `.env.example` **se sube al repositorio**. Si pones ahí una contraseña real
+> (de Aiven, SMTP, etc.), GitHub activa **Push Protection** y **rechaza el
+> push** con:
+> ```
+> remote: error: GH013: Repository rule violations found for refs/heads/main.
+> remote:   - GITHUB PUSH PROTECTION
+> remote:     - Push cannot contain secrets
+> ```
+> Las credenciales reales van en **`.env`** (está en `.gitignore`) o directamente
+> en el panel de variables de entorno de Render/Koyeb.
+
 - **Prepared statements** en todas las consultas (`pool.execute` / `conn.execute` con `?`).
 - **Sanitización** de entradas: recorte, eliminación de caracteres de control y
   normalización del correo a minúsculas.

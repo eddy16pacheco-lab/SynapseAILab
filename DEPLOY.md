@@ -135,6 +135,12 @@ npm run smtp:check
 
 ## 5. Google Identity Services (botón "Registrarse con Google")
 
+> ⚠️ **Antes de continuar**: asegúrate de que `.env.example` **no** contiene tus
+> credenciales reales. Ese archivo se sube al repositorio y GitHub bloquea el
+> push con `GH013: Push cannot contain secrets` si detecta una contraseña de
+> Aiven, SMTP, etc. Tus valores reales van en `.env` (ignorado por Git) o en el
+> panel de variables de Render/Koyeb.
+
 1. <https://console.cloud.google.com/> → crea un proyecto.
 2. **APIs y servicios → Biblioteca** → habilita **Google Identity Services**.
 3. **APIs y servicios → Credenciales → Crear credenciales → ID de cliente OAuth 2.0**
