@@ -1,0 +1,20 @@
+node_modules/
+.env
+.env.local
+npm-debug.log*
+yarn-error.log*
+.DS_Store
+Thumbs.db
+*.log
+server-log.txt
+run*.txt
+coverage/
+dist/
+.idea/
+.vscode/
+certs/
+*.crt
+*.pem
+
+# Clon anidado del repo (trabajo paralelo). No debe formar parte del repo padre.
+SynapseAILab/

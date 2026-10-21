@@ -1,0 +1,25 @@
+# Fuerza finales de línea LF en todo el repositorio.
+#
+# Motivo: en Windows, core.autocrlf=true convierte los archivos a CRLF al
+# comprobar el repo. Dentro del contenedor, un Dockerfile o un script .sh
+# con CRLF provoca errores tipo:
+#   /bin/sh^M: not found
+#   exec /usr/bin/node^M: exec format error
+#
+# Con este archivo el contenido guardado en Git SIEMPRE usa LF.
+
+* text=auto eol=lf
+
+# Ficheros que el contenedor ejecuta: deben ser LF sí o sí.
+Dockerfile text eol=lf
+*.sh   text eol=lf
+Procfile text eol=lf
+
+# Binarios: nunca deben ser transformados.
+*.png  binary
+*.jpg  binary
+*.gif  binary
+*.ico  binary
+*.svg  text eol=lf
+*.woff binary
+*.woff2 binary

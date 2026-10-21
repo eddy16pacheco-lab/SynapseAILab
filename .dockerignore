@@ -1,0 +1,17 @@
+node_modules
+npm-debug.log*
+.env
+.env.local
+.git
+.gitignore
+tests
+*.md
+!README.md
+Dockerfile
+.dockerignore
+render.yaml
+Procfile
+certs
+*.crt
+*.pem
+coverage
