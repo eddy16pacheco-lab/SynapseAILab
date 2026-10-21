@@ -40,9 +40,12 @@ function getTransporter() {
     pool: true,
     maxConnections: 3,
     maxMessages: 100,
-    connectionTimeout: 15000,
-    greetingTimeout: 15000,
-    socketTimeout: 20000
+    // Tiempos cortos a propósito: un relay SMTP lento o inaccesible no debe
+    // dejar el proceso colgando. El aviso al administrador se envía en
+    // segundo plano, así que un corte aquí solo afecta al correo.
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 10000
   });
 
   return transporter;
@@ -172,13 +175,20 @@ async function sendAdminNewUserNotification(user, extra = {}) {
   const from = `"${process.env.MAIL_FROM_NAME || 'SynapseAI Lab'}" <${process.env.SMTP_USER || adminEmail}>`;
 
   try {
-    const info = await t.sendMail({
-      from,
-      to: adminEmail,
-      subject: `[SynapseAI Lab] Nuevo registro: ${user.nombre} ${user.apellido} <${user.email}>`,
-      text: buildAdminText(user, extra),
-      html: buildAdminHtml(user, extra)
-    });
+    // Capa extra de seguridad: aunque nodemailer respete sus timeouts,
+    // el envío nunca puede dejar el proceso esperando más de 12 s.
+    const info = await Promise.race([
+      t.sendMail({
+        from,
+        to: adminEmail,
+        subject: `[SynapseAI Lab] Nuevo registro: ${user.nombre} ${user.apellido} <${user.email}>`,
+        text: buildAdminText(user, extra),
+        html: buildAdminHtml(user, extra)
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Tiempo de espera agotado al enviar el correo (12 s).')), 12000)
+      )
+    ]);
     console.log(`[mailer] Notificación enviada a ${adminEmail} (${info.messageId})`);
     return { sent: true, messageId: info.messageId };
   } catch (err) {

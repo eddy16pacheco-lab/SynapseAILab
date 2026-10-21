@@ -1,0 +1,10 @@
+#!/bin/sh
+# =====================================================================
+#  SynapseAI Lab — Gancho pre-commit: bloquea secretos en el repo
+#
+#  Actívalo una vez por clon:
+#     git config core.hooksPath .githooks
+#
+#  (en Windows: git config core.hooksPath .githooks)
+# =====================================================================
+node scripts/check-secrets.js

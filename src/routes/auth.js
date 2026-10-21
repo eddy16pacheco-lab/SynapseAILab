@@ -79,6 +79,29 @@ async function registrarBitacora(userId, email, origen, correoEnviado, error) {
   }
 }
 
+/**
+ * Envía el aviso al administrador y la copia de bienvenida AL FONDO.
+ *
+ * Importante: NO se espera al servidor SMTP antes de responder al usuario.
+ * Si el relay SMTP está lento, bloqueado por el firewall o sin configurar,
+ * el registro (que ya está confirmado en la base de datos) no debe esperar.
+ * El resultado (enviado o error) queda registrado en bitacora_registro.
+ */
+function notificarEnSegundoPlano(usuario, origen) {
+  setImmediate(() => {
+    (async () => {
+      const notificacion = await sendAdminNewUserNotification(usuario, {
+        origen,
+        bonus: BONUS_USD.toFixed(2)
+      });
+      await registrarBitacora(usuario.id, usuario.email, origen, notificacion.sent, notificacion.error);
+      await sendWelcomeToUser(usuario, BONUS_USD.toFixed(2));
+    })().catch((err) => {
+      console.error('[auth] Error en la notificación en segundo plano:', err.message);
+    });
+  });
+}
+
 /* ------------------------------------------------------------------ *
  * POST /api/auth/register — Registro con formulario
  * ------------------------------------------------------------------ */
@@ -154,15 +177,8 @@ router.post(
       throw err;
     }
 
-    /* --- Notificación al administrador --- */
-    const notificacion = await sendAdminNewUserNotification(nuevoUsuario, {
-      origen: 'local',
-      bonus: BONUS_USD.toFixed(2)
-    });
-    await registrarBitacora(nuevoUsuario.id, nuevoUsuario.email, 'local', notificacion.sent, notificacion.error);
-
-    /* --- Correo opcional de bienvenida al usuario --- */
-    await sendWelcomeToUser(nuevoUsuario, BONUS_USD.toFixed(2));
+    /* --- Notificación al administrador (en segundo plano, no bloquea la respuesta) --- */
+    notificarEnSegundoPlano(nuevoUsuario, 'local');
 
     /* --- Sesión --- */
     req.session.user = { id: nuevoUsuario.id, email: nuevoUsuario.email, provider: 'local' };
@@ -172,7 +188,6 @@ router.post(
       message: 'Registro completado correctamente.',
       user: publicUser(nuevoUsuario),
       bonus: BONUS_USD,
-      adminNotified: notificacion.sent,
       nuevo: true
     });
   })
@@ -263,12 +278,8 @@ router.post(
 
       nuevo = true;
 
-      const notificacion = await sendAdminNewUserNotification(usuario, {
-        origen: 'google',
-        bonus: BONUS_USD.toFixed(2)
-      });
-      await registrarBitacora(usuario.id, usuario.email, 'google', notificacion.sent, notificacion.error);
-      await sendWelcomeToUser(usuario, BONUS_USD.toFixed(2));
+      /* --- Notificación al administrador (en segundo plano) --- */
+      notificarEnSegundoPlano(usuario, 'google');
     }
 
     req.session.user = { id: usuario.id, email: usuario.email, provider: 'google' };
@@ -280,7 +291,6 @@ router.post(
         : 'Sesión iniciada con tu cuenta de Google verificada.',
       user: publicUser(usuario),
       bonus: nuevo ? BONUS_USD : 0,
-      adminNotified: nuevo,
       nuevo
     });
   })

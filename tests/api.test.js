@@ -314,6 +314,16 @@ async function call(method, url, body) {
   return { status: res.status, json, text, headers: res.headers };
 }
 
+/** Espera a que se cumpla una condición (notificaciones en segundo plano). */
+async function waitFor(condition, timeoutMs = 2000) {
+  const inicio = Date.now();
+  while (Date.now() - inicio < timeoutMs) {
+    if (condition()) return true;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  return false;
+}
+
 test.before(async () => {
   await new Promise((resolve) => {
     server = app.listen(0, () => {
@@ -407,7 +417,10 @@ test('Registro válido crea la cuenta, acredita el bono y notifica al administra
   assert.strictEqual(res.json.user.saldoFormateado, '$1.00 USD');
   assert.strictEqual(res.json.user.provider, 'local');
   assert.strictEqual(res.json.user.perfilCompleto, true);
-  assert.strictEqual(res.json.adminNotified, true);
+  assert.strictEqual(res.json.bonus, 1);
+
+  // La respuesta NO espera al servidor SMTP (se envía en segundo plano).
+  await waitFor(() => correos.length === correosAntes + 1);
 
   // El administrador recibe el correo con todos los datos.
   assert.strictEqual(correos.length, correosAntes + 1, 'debe enviarse un correo al administrador');
@@ -421,7 +434,7 @@ test('Registro válido crea la cuenta, acredita el bono y notifica al administra
   assert.strictEqual(aviso.extra.bonus, '1.00');
 
   // La bitácora registra el aviso.
-  assert.strictEqual(state.bitacora.length, 1);
+  await waitFor(() => state.bitacora.length >= 1);
   assert.strictEqual(state.bitacora[0].correo_enviado, 1);
 
   // PROTOTIPO ACADÉMICO: la contraseña se guarda en texto plano.
@@ -478,6 +491,7 @@ test('Google: crea la cuenta con correo verificado y bono acreditado', async () 
   assert.strictEqual(res.json.user.saldo, 1);
   assert.strictEqual(res.json.user.perfilCompleto, false, 'el perfil queda incompleto');
 
+  await waitFor(() => correos.length === correosAntes + 1);
   assert.strictEqual(correos.length, correosAntes + 1, 'debe notificarse al administrador');
   assert.strictEqual(correos[correos.length - 1].extra.origen, 'google');
 });

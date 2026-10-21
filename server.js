@@ -27,6 +27,10 @@ const { notFoundApi, errorHandler } = require('./src/middleware');
 const app = express();
 
 const PORT = Number.parseInt(process.env.PORT || '3000', 10);
+// Las plataformas de contenedores (Aiven Runtime, Render, Koyeb) enrutan al
+// contenedor desde fuera: hay que escuchar en 0.0.0.0, no solo en localhost.
+// Se usa SERVER_HOST para no chocar con la variable HOST del apartado de BD.
+const HOST = process.env.SERVER_HOST || '0.0.0.0';
 const IS_PROD = process.env.NODE_ENV === 'production';
 const APP_NAME = 'SynapseAI Lab';
 const SLOGAN = 'Plataforma global de entrenamiento de IA y etiquetado de datos';
@@ -157,7 +161,11 @@ app.use(
     cookie: {
       httpOnly: true,
       sameSite: 'lax',
-      secure: IS_PROD,
+      // 'auto' = marca Secure solo si la petición llega por HTTPS.
+      // Necesario porque Aiven Runtime / Render / Koyeb terminan el TLS fuera
+      // del contenedor y reenvían HTTP: con `secure: true` fijo la cookie se
+      // descartaría y el usuario parecería no haber iniciado sesión.
+      secure: 'auto',
       maxAge: 1000 * 60 * 60 * 8 // 8 horas
     }
   })
@@ -216,7 +224,18 @@ app.get('/api/health', async (req, res) => {
   } catch (err) {
     db = 'down: ' + err.message;
   }
-  res.json({ ok: true, app: APP_NAME, uptime: process.uptime(), db });
+  // `port` y `host` permiten detectar desajustes entre el puerto que escucha
+  // el contenedor y el puerto que la plataforma publica (EXPOSE / ports).
+  res.json({
+    ok: true,
+    app: APP_NAME,
+    uptime: process.uptime(),
+    db,
+    port: PORT,
+    host: HOST,
+    env: IS_PROD ? 'production' : 'development',
+    sessionStore: SESSION_STORE
+  });
 });
 
 /** Rutas de autenticación y registro. */
@@ -263,9 +282,14 @@ async function start() {
     console.warn('[google] GOOGLE_CLIENT_ID no definido: el botón de Google no podrá renderizarse.');
   }
 
-  const server = app.listen(PORT, () => {
-    console.log(`[server] SynapseAI Lab escuchando en http://localhost:${PORT}  (${IS_PROD ? 'producción' : 'desarrollo'})`);
+  const server = app.listen(PORT, HOST, () => {
+    const addr = server.address();
+    console.log(
+      `[server] SynapseAI Lab escuchando en http://${HOST}:${PORT} ` +
+        `(puerto real: ${addr ? addr.port : PORT})  (${IS_PROD ? 'producción' : 'desarrollo'})`
+    );
     console.log(`[server] Bono de bienvenida: $${BONUS_USD.toFixed(2)} USD`);
+    console.log(`[server] Store de sesión: ${SESSION_STORE}`);
   });
 
   const shutdown = async (signal) => {

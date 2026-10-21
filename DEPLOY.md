@@ -205,8 +205,92 @@ docker run -d -p 3000:3000 --env-file .env synapseai-lab
 
 ---
 
-## 7. Alternativa 100 % local y gratuita (sin cuentas de terceros)
+## 6.1 Opción D — Aiven Runtime (todo dentro de Aiven)
 
+Aiven Runtime despliega contenedores desde tu repositorio de GitHub, en la misma
+región que tu base de datos (tráfico interno, sin coste de egreso).
+
+### Configuración en la consola de Aiven
+
+| Campo | Valor |
+|-------|-------|
+| Runtime → Deploy application | tu repo `eddy16pacheco-lab/SynapseAILab`, rama `main` |
+| Manifest file | `Dockerfile` (Aiven lo detecta solo y toma el puerto de `EXPOSE`) |
+| Build path | `./` |
+| Containerfile path | `Dockerfile` |
+| Public port | `3000` → Aiven publica `https://<uuid>-3000.<region>.aiven.app` |
+
+### Reglas que exige Aiven Runtime
+
+1. **El puerto de `EXPOSE` debe ser el mismo que escucha el proceso.**
+   Aiven lee `EXPOSE 3000` para crear el puerto público. Si la app escucha en
+   otro puerto, el servicio queda *no saludable* y Aiven muestra su página de
+   estado en vez de tu app. Por eso el `Dockerfile` fija `ENV PORT=3000`.
+2. **El endpoint público es siempre HTTPS:443** y Aiven reenvía al contenedor
+   como HTTP. Por eso la cookie de sesión usa `secure: 'auto'`: si se fijara
+   `secure: true` y Aiven no enviara `X-Forwarded-Proto`, el navegador
+   descartaría la cookie y parecería que el login no funciona.
+3. **El `Dockerfile` no debe tener continuaciones de línea (`\`)** en el
+   `HEALTHCHECK`: el parser de manifiestos de Aiven las procesa de forma
+   menos fiable. El nuestro va en una sola línea.
+4. **No hay que abrir puertos**: Aiven enruta el 443 público al contenedor.
+
+### Variables de entorno en Aiven Runtime
+
+En *Runtime → tu app → Environment variables*:
+
+```ini
+NODE_ENV=production
+PORT=3000
+SESSION_STORE=mysql
+SESSION_POOL_SIZE=3
+DB_SSL=true
+DB_SSL_REJECT_UNAUTHORIZED=false
+DB_POOL_SIZE=5
+
+DB_HOST=<Service URI de tu MySQL de Aiven>
+DB_PORT=3306
+DB_USER=avnadmin
+DB_PASSWORD=<la que aparece en Connection>
+DB_NAME=<database name>
+
+GOOGLE_CLIENT_ID=<tu ID de cliente OAuth>
+SMTP_HOST=<host del relay SMTP>
+SMTP_PORT=<puerto del relay SMTP>
+SMTP_USER=<usuario SMTP>
+SMTP_PASS=<clave SMTP>
+ADMIN_EMAIL=admin@synapseailab.com
+```
+
+> ⚠️ **Ports de salida bloqueados en Aiven Runtime**: `23, 25, 119, 135, 137,
+> 138, 139, 179, 445, 465, 631`. El puerto **465** (SMTPS implícito) está
+> bloqueado: usa **587 con STARTTLS** en lugar de 465.
+
+### Diagnóstico
+
+1. **Aiven → tu app → Runtime logs**: ahí se ve si el contenedor arrancó, en
+   qué puerto escucha y si la base de datos conectó.
+2. **Aiven → tu app → Build logs**: si el build falló (por ejemplo `npm ci`).
+3. El endpoint `/api/health` devuelve el puerto real, el host y el estado de
+   la BD, así que sirve de diagnóstico:
+   ```bash
+   curl https://<uuid>-3000.<region>.aiven.app/api/health
+   # {"ok":true,"app":"SynapseAI Lab","db":"up","port":3000,"host":"",
+   #  "env":"production","sessionStore":"mysql"}
+   ```
+
+### Sobre el mensaje "Domains, protocols and ports must match"
+
+Es un aviso del navegador (no de tu app): la consola de Aiven muestra la
+aplicación dentro de un `iframe` con sandbox y, al comprobar el estado del
+servicio en `userapi.<region>.aivencloud.net/services/status`, el navegador
+bloquea la navegación porque el origen no coincide. **Aparece cuando Aiven
+considera el servicio no saludable**, así que el siguiente paso es mirar los
+*Runtime logs*, no el frontend.
+
+---
+
+## 7. Alternativa 100 % local y gratuita (sin cuentas de terceros)
 Si prefieres no registrarte en nada:
 
 ```bash

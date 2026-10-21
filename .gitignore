@@ -15,3 +15,6 @@ dist/
 certs/
 *.crt
 *.pem
+
+# Clon anidado del repo (trabajo paralelo). No debe formar parte del repo padre.
+SynapseAILab/
