@@ -172,6 +172,8 @@ npm run dev    # desarrollo (recarga automática)
 
 Abre <http://localhost:3000>.
 
+> **Producción**: <https://synapseailab.vercel.app>
+
 > ### 🚀 ¿Quieres publicarlo en Internet sin pagar nada?
 > Sigue la guía **[DEPLOY.md](DEPLOY.md)**: Aiven MySQL Free Tier + Render Free +
 > Brevo Free + Google OAuth, todo con **$0** y **sin tarjeta de crédito**.
