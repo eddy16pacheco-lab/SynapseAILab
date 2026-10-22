@@ -1,6 +1,6 @@
 -- =====================================================================
 --  SynapseAI Lab — Esquema de base de datos (MySQL 8 / Aiven Cloud)
---  Saldo predeterminado: 1.00 USD (bono de bienvenida)
+--  Saldo predeterminado: 1.00 USD (bono de bienvenida).
 -- =====================================================================
 
 CREATE DATABASE IF NOT EXISTS `synapseai_lab`
