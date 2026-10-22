@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS `users` (
   -- En producción debe ser bcrypt (cost >= 12) o Argon2id.
   `password`       TEXT         DEFAULT NULL,
   `email_verified` TINYINT(1)   NOT NULL DEFAULT 0,
+  `verificado_por` VARCHAR(16)  DEFAULT NULL, -- 'imap' | 'google' | 'otp'
   `google_sub`     VARCHAR(255) DEFAULT NULL,
   `provider`       ENUM('local','google') NOT NULL DEFAULT 'local',
   `perfil_completo` TINYINT(1)  NOT NULL DEFAULT 0,
@@ -53,6 +54,23 @@ CREATE TABLE IF NOT EXISTS `movimientos_saldo` (
   KEY `idx_mov_user` (`user_id`),
   CONSTRAINT `fk_mov_user` FOREIGN KEY (`user_id`)
     REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------
+-- Códigos de verificación de correo (OTP de un solo uso)
+-- El código NUNCA se guarda en claro: solo su hash SHA-256.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `codigos_verificacion` (
+  `id`         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `email`      VARCHAR(190) NOT NULL,
+  `codigo_hash` CHAR(64) NOT NULL,
+  `expira_at`  DATETIME NOT NULL,
+  `intentos`   TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  `usado`      TINYINT(1) NOT NULL DEFAULT 0,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_cv_email` (`email`),
+  KEY `idx_cv_expira` (`expira_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------

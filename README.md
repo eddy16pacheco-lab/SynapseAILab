@@ -12,6 +12,7 @@ administrador con cada alta.
 
 ---
 
+
 ## 1. Stack tecnológico
 
 | Capa        | Tecnología                                                     |
@@ -26,6 +27,7 @@ administrador con cada alta.
 | Pruebas     | `node:test` + `node:assert` (sin dependencias externas)          |
 
 ---
+
 
 ## 2. Estructura del proyecto
 
@@ -45,31 +47,45 @@ SynapseAI Lab/
 │
 ├── src/
 │   ├── googleAuth.js          Verificación estricta del id_token de Google
-│   ├── mailer.js              Envío del aviso al administrador (nodemailer)
+│   ├── mailVerify.js          Validación de las credenciales REALES del buzón (IMAP)
+│   ├── otp.js                 Códigos de un solo uso (hash SHA-256, con caducidad)
+│   ├── mailer.js              Envío del aviso al administrador y del código OTP
 │   ├── middleware.js          requireAuth, asyncHandler, 404 y error handler
 │   └── routes/
-│       ├── auth.js            Rutas de registro, Google y cierre de sesión
+│       ├── auth.js            Rutas de registro, Google, OTP y cierre de sesión
 │       └── me.js              Rutas del usuario en sesión (perfil y saldo)
 │
+├── api/
+│   └── index.js               Punto de entrada para Vercel (serverless)
+│
 ├── scripts/
-│   ├── init-db.js             Crea el esquema (ejecuta sql/schema.sql)
+│   ├── init-db.js             Crea el esquema y aplica las migraciones
 │   ├── db-check.js            Comprueba conexión y estado de la base de datos
-│   └── smtp-check.js          Verifica la configuración SMTP
+│   ├── smtp-check.js          Verifica la configuración SMTP
+│   └── check-secrets.js       Gancho pre-commit: bloquea credenciales en el repo
 │
 ├── sql/
-│   └── schema.sql             Tablas users, movimientos_saldo y bitacora_registro
+│   ├── schema.sql             Tablas users, movimientos_saldo, codigos y bitácora
+│   └── migrations.sql         Cambios sobre bases ya existentes
 │
 ├── public/                    Frontend estático
 │   ├── index.html             Formulario, botón de Google y pantalla de bienvenida
 │   ├── css/styles.css         Tema oscuro SaaS, responsive
-│   ├── js/app.js              Validación en vivo, registro, Google y render del panel
+│   ├── js/app.js              Validación en vivo, registro, OTP, Google y panel
 │   └── img/favicon.svg        Logotipo (sinápsis neuronal)
 │
-└── tests/
-    └── api.test.js            Pruebas de integración con DB / SMTP / Google simulados
+├── vercel.json                Blueprint de despliegue en Vercel
+├── render.yaml                Blueprint de despliegue en Render
+├── Dockerfile / Procfile      Despliegue en contenedores / Heroku-like
+│
+├── tests/
+│   └── api.test.js            Pruebas de integración con DB / SMTP / Google simulados
+│
+└── .githooks/pre-commit       Bloquea commits con secretos
 ```
 
 ---
+
 
 ## 3. Puesta en marcha (paso a paso)
 
@@ -162,7 +178,46 @@ Abre <http://localhost:3000>.
 
 ---
 
-## 4. Variables de entorno
+
+## 4. Verificación real del correo (IMAP + código OTP)
+
+Al registrarse, el backend **se autentica en el servidor IMAP del proveedor**
+con el correo y la contraseña que introduces. Eso demuestra que la cuenta de
+correo es real y que la persona la controla.
+
+```
+┌──────────────┐   HTTPS    ┌──────────────┐   IMAPS    ┌────────────────┐
+│  Formulario  │──────────▶ │   SynapseAI  │───────────▶│ imap.gmail.com │
+│  correo +    │            │     Lab      │  login     │ (u otros)      │
+│  contraseña  │            └──────────────┘            └────────────────┘
+└──────────────┘                   │
+      ▲                            │ login OK → se crea la cuenta
+      │                            │        → bono de $1.00 USD
+      │                            ▼
+      │                     ┌──────────────┐   SMTP     ┌──────────┐
+      └─────────────────────│  Código OTP  │───────────▶│ Tu buzón │
+        (código de 6 dígitos)│  (respaldo) │            └──────────┘
+```
+
+> **Nunca pedimos la contraseña de tu correo para iniciar sesión en SynapseAI
+> Lab.** Se usa únicamente para *comprobar* que la cuenta es auténtica, en el
+> mismo intento y en memoria. Para usar la plataforma, tu contraseña es la de
+> SynapseAI Lab.
+
+Proveedores soportados: Gmail (necesita **contraseña de aplicación**), Outlook /
+Hotmail / Live / MSN (funciona con la contraseña normal), Yahoo e iCloud.
+
+Si el buzón no se puede comprobar, el registro continúa y se valida con un
+**código de un solo uso (OTP)** que se envía por correo y se introduce en la
+pantalla de bienvenida.
+
+Variables relacionadas: `MAIL_VERIFY_MODE`, `IMAP_TIMEOUT_MS`,
+`OTP_TTL_MINUTOS`, `OTP_MAX_INTENTOS`, `OTP_SALT`, `GOOGLE_SIGNIN_ENABLED`.
+
+---
+
+
+## 5. Variables de entorno
 
 | Variable                       | Uso                                                      | Por defecto            |
 |--------------------------------|----------------------------------------------------------|------------------------|
@@ -181,6 +236,13 @@ Abre <http://localhost:3000>.
 | `DB_SSL_CA`                    | Ruta al certificado CA de Aiven                           | —                      |
 | `DB_POOL_SIZE`                 | Conexiones simultáneas del pool                            | `10`                   |
 | `GOOGLE_CLIENT_ID`             | ID de cliente OAuth 2.0 de Google                         | —                      |
+| `GOOGLE_SIGNIN_ENABLED`        | Muestra (`true`) u oculta (`false`) el botón de Google     | `true`                 |
+| `MAIL_VERIFY_MODE`             | `imap` (verifica el buzón) \| `off` (solo formato)        | `imap`                 |
+| `IMAP_TIMEOUT_MS`              | Tiempo máximo de la autenticación IMAP                     | `10000`                |
+| `OTP_TTL_MINUTOS`              | Validez del código de un solo uso                          | `10`                   |
+| `OTP_MAX_INTENTOS`             | Intentos máximos por código                                | `5`                    |
+| `OTP_SALT`                     | Sal del hash de los códigos (usa `SESSION_SECRET` si falta)| —                      |
+| `TRUST_PROXY`                  | Nº de proxies delante de la app (1 en producción)          | `0` local / `1` prod  |
 | `GOOGLE_HOSTED_DOMAIN`         | Restringe el dominio de Google (opcional)                 | —                      |
 | `SMTP_HOST` / `SMTP_PORT`      | Servidor SMTP y puerto                                    | — / `587`              |
 | `SMTP_SECURE`                  | `true` para SMTPS (465)                                   | `false`                |
@@ -205,14 +267,17 @@ Aiven ya crea la base y el usuario por ti, y el usuario **no** tiene permiso de
 
 ---
 
-## 5. API
+
+## 6. API
 
 | Método | Ruta                      | Descripción                                        |
 |--------|---------------------------|----------------------------------------------------|
 | `GET`  | `/api/config`             | Configuración pública (ID de Google, bono)         |
 | `GET`  | `/api/health`             | Estado del servidor y de la base de datos           |
-| `POST` | `/api/auth/register`      | Registro con formulario + validaciones             |
+| `POST` | `/api/auth/register`      | Registro + validación real del buzón (IMAP)         |
 | `POST` | `/api/auth/google`        | Verificación estricta del `id_token` de Google     |
+| `POST` | `/api/auth/verificar-email` | Validar el código OTP recibido por correo        |
+| `POST` | `/api/auth/reenviar-codigo`  | Reenviar el código OTP                           |
 | `POST` | `/api/auth/logout`        | Cierre de sesión                                   |
 | `GET`  | `/api/me`                 | Usuario de la sesión actual                        |
 | `PATCH`| `/api/me/profile`         | Completa el perfil de cuentas creadas con Google   |
@@ -238,14 +303,17 @@ Respuesta `201`:
 {
   "ok": true,
   "message": "Registro completado correctamente.",
-  "user": { "id": 1, "saldo": 1, "saldoFormateado": "$1.00 USD", "emailVerified": false, "provider": "local" },
+  "user": { "id": 1, "saldo": 1, "saldoFormateado": "$1.00 USD", "emailVerified": true,
+            "verificadoPor": "imap", "correoVerificadoPorBandeja": true, "provider": "local" },
   "bonus": 1,
-  "adminNotified": true,
-  "nuevo": true
+  "nuevo": true,
+  "correoVerificadoPorBandeja": true,
+  "codigoEnviado": true
 }
 ```
 
-Errores posibles: `422 VALIDATION_ERROR`, `409 DUPLICATE`, `429 RATE_LIMIT`.
+Errores posibles: `401 CREDENCIALES_INVALIDAS`, `422 VALIDATION_ERROR`,
+`409 DUPLICATE`, `429 RATE_LIMIT`.
 
 ### `POST /api/auth/google`
 
@@ -258,7 +326,8 @@ El backend verifica el token con `google-auth-library` y comprueba **explícitam
 
 ---
 
-## 6. Base de datos
+
+## 7. Base de datos
 
 ### `users`
 
@@ -287,7 +356,8 @@ se envió correctamente (`correo_enviado`, `correo_error`).
 
 ---
 
-## 7. ⚠️ Nota de seguridad sobre las contraseñas
+
+## 8. Nota de seguridad sobre las contraseñas
 
 Este proyecto es un **prototipo académico** y, tal y como requiere el enunciado,
 almacena la contraseña **en texto plano** en la columna `users.password`.
@@ -308,7 +378,8 @@ complejidad, duplicados, transacciones, correo al administrador) no cambia.
 
 ---
 
-## 8. Buenas prácticas de seguridad implementadas
+
+## 9. Buenas prácticas de seguridad implementadas
 
 > ### ⚠️ Nunca escribas credenciales reales en `.env.example`
 > `.env.example` **se sube al repositorio**. Si pones ahí una contraseña real
@@ -339,7 +410,8 @@ complejidad, duplicados, transacciones, correo al administrador) no cambia.
 
 ---
 
-## 9. Pruebas
+
+## 10. Pruebas
 
 ```bash
 npm test
@@ -357,7 +429,8 @@ La suite (`tests/api.test.js`) simula MySQL, SMTP y Google, y verifica:
 
 ---
 
-## 10. Flujo de usuario
+
+## 11. Flujo de usuario
 
 ```
 ┌──────────────┐        ┌──────────────────┐       ┌──────────────────────┐
@@ -382,7 +455,8 @@ bienvenida con el bono de **$1.00 USD** acreditado.
 
 ---
 
-## 11. Licencia
+
+## 12. Licencia
 
 MIT — SynapseAI Lab.
 #   S y n a p s e A I L a b  

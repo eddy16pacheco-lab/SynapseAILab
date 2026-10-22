@@ -40,7 +40,14 @@ const BONUS_USD = Number.parseFloat(process.env.BONUS_USD || '1.00');
 /* ------------------------------------------------------------------ *
  * 1) Configuración de Express
  * ------------------------------------------------------------------ */
-app.set('trust proxy', 1);
+// `trust proxy` para que `req.secure` y `req.ip` reflejen el proxy delante
+// (Render, Koyeb, Vercel, Aiven). En Vercel hay un proxy delante, por eso 1;
+// en local, 0 (no hay proxy).
+const TRUST_PROXY = Number.parseInt(
+  process.env.TRUST_PROXY !== undefined ? process.env.TRUST_PROXY : IS_PROD ? '1' : '0',
+  10
+);
+app.set('trust proxy', TRUST_PROXY);
 app.disable('x-powered-by');
 
 /* ------------------------------------------------------------------ *
@@ -211,6 +218,9 @@ app.get('/api/config', (req, res) => {
     appName: APP_NAME,
     slogan: SLOGAN,
     googleClientId: process.env.GOOGLE_CLIENT_ID || '',
+    // Si se desactiva, el frontend retira el botón y el separador de Google
+    // y el registro solo se hace con correo + contraseña del buzón.
+    googleSignInEnabled: String(process.env.GOOGLE_SIGNIN_ENABLED || 'true').toLowerCase() !== 'false',
     bonusUsd: BONUS_USD,
     bonusTexto: `$${BONUS_USD.toFixed(2)} USD`
   });

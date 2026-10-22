@@ -228,6 +228,58 @@ async function sendWelcomeToUser(user, bonus) {
   }
 }
 
+/**
+ * Envía el código de verificación del correo (OTP de un solo uso).
+ *
+ * Se espera a propósito (a diferencia del aviso al administrador): el
+ * código es imprescindible para completar el registro, así que la respuesta
+ * HTTP depende de él. El tope de tiempo protege al servidorless de Vercel.
+ *
+ * @returns {Promise<{sent:boolean, skipped?:boolean, error?:string}>}
+ */
+async function sendVerificationCode(user, codigo, minutosValidez = 10) {
+  const t = getTransporter();
+  if (!t) {
+    console.log(`[mailer] (SMTP no configurado) Código de verificación para ${user.email}: ${codigo}`);
+    return { sent: false, skipped: true, error: 'SMTP no configurado' };
+  }
+
+  const from = `"${process.env.MAIL_FROM_NAME || 'SynapseAI Lab'}" <${process.env.SMTP_USER || user.email}>`;
+
+  try {
+    const info = await Promise.race([
+      t.sendMail({
+        from,
+        to: user.email,
+        subject: `${String(codigo).length ? '' : ''}Tu código de verificación de SynapseAI Lab es ${codigo}`,
+        text:
+          `Hola ${user.nombre},\n\n` +
+          `Tu código de verificación para SynapseAI Lab es: ${codigo}\n\n` +
+          `Caduca en ${minutosValidez} minutos. Si no has solicitado este registro, ` +
+          `ignora este mensaje.\n\nEquipo SynapseAI Lab`,
+        html: `<div style="font-family:Segoe UI,Roboto,sans-serif;max-width:520px;margin:auto;padding:24px;color:#101a33">
+                 <h2 style="margin:0 0 12px;">Verifica tu correo</h2>
+                 <p style="line-height:1.6;">Hola ${escapeHtml(user.nombre)}, introduce este código
+                 en SynapseAI Lab para confirmar tu registro:</p>
+                 <div style="font-size:32px;font-weight:800;letter-spacing:8px;background:#0b1020;color:#37e2ff;
+                             padding:18px 24px;border-radius:12px;text-align:center;margin:20px 0;">${escapeHtml(codigo)}</div>
+                 <p style="color:#5b6a8c;font-size:13px;">Caduca en ${minutosValidez} minutos.
+                 Si no has solicitado este registro, ignora este mensaje.</p>
+                 <p style="color:#5b6a8c;font-size:13px;margin-top:16px;">Equipo SynapseAI Lab</p>
+               </div>`
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Tiempo de espera agotado al enviar el código (8 s).')), 8000)
+      )
+    ]);
+    console.log(`[mailer] Código de verificación enviado a ${user.email}`);
+    return { sent: true, messageId: info.messageId };
+  } catch (err) {
+    console.error('[mailer] Error al enviar el código de verificación:', err.message);
+    return { sent: false, error: err.message };
+  }
+}
+
 /** Verifica la configuración SMTP (usado por `npm run smtp:check`). */
 async function verifyTransport() {
   const t = getTransporter();
@@ -243,6 +295,7 @@ async function verifyTransport() {
 module.exports = {
   sendAdminNewUserNotification,
   sendWelcomeToUser,
+  sendVerificationCode,
   verifyTransport,
   buildAdminHtml,
   buildAdminText

@@ -702,6 +702,60 @@ ul, ol, dl, dd { margin: 0; padding: 0; list-style: none; }
   border: 1px solid rgba(255, 196, 107, 0.28);
 }
 .notice--warn strong { color: var(--warn); }
+.notice--info {
+  background: rgba(55, 226, 255, 0.07);
+  border: 1px solid rgba(55, 226, 255, 0.26);
+}
+.notice--info strong { color: var(--cyan); }
+.notice--compact { margin-bottom: 22px; padding: 14px 16px; }
+.notice--compact p { font-size: 12.5px; line-height: 1.55; }
+.notice--compact em { color: var(--text); font-style: normal; font-weight: 700; }
+
+.field__hint {
+  font-size: 11.5px;
+  color: var(--faint);
+  line-height: 1.55;
+}
+.field__hint em { color: var(--muted); font-style: normal; font-weight: 600; }
+
+/* Verificación por código OTP */
+.otp-form {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.otp-form input {
+  flex: 0 1 190px;
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 8px;
+  text-align: center;
+  color: var(--cyan);
+  background: rgba(6, 10, 20, 0.62);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
+}
+.otp-form input:focus {
+  outline: none;
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 3px rgba(55, 226, 255, 0.13);
+}
+.otp-form input::placeholder { color: #3d4767; letter-spacing: 8px; }
+.otp-form .btn { flex: 0 0 auto; }
+.btn--sm { padding: 10px 16px; font-size: 13px; }
+
+.otp-message {
+  margin-top: 10px;
+  font-size: 12.5px;
+  min-height: 1.2em;
+}
+.otp-message--ok { color: var(--green); }
+.otp-message--error { color: var(--danger); }
+.otp-message--info { color: var(--cyan); }
 
 .welcome__actions {
   display: flex;

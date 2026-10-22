@@ -15,7 +15,9 @@ const express = require('express');
 const { query, queryOne, transaction } = require('../../db');
 const { asyncHandler } = require('../middleware');
 const { verifyGoogleIdToken, AuthError } = require('../googleAuth');
-const { sendAdminNewUserNotification, sendWelcomeToUser } = require('../mailer');
+const { sendAdminNewUserNotification, sendWelcomeToUser, sendVerificationCode } = require('../mailer');
+const { verificarCredenciales } = require('../mailVerify');
+const otp = require('../otp');
 const V = require('../../shared/validators');
 
 const router = express.Router();
@@ -37,6 +39,10 @@ function publicUser(row) {
     ocupacion: row.ocupacion,
     email: row.email,
     emailVerified: !!row.email_verified,
+    // 'imap' = se comprobó el buzón con la contraseña; 'google' = Google Identity;
+    // 'otp' = confirmó un código recibido por correo.
+    verificadoPor: row.verificado_por || null,
+    correoVerificadoPorBandeja: row.verificado_por === 'imap',
     provider: row.provider,
     perfilCompleto: !!row.perfil_completo,
     saldo: Number(row.saldo),
@@ -135,6 +141,26 @@ router.post(
       });
     }
 
+    /* ------------------------------------------------------------------ *
+     * Verificación de que el correo y la contraseña son REALES.
+     *
+     * Se autentica en el buzón (IMAP) con las credenciales introducidas.
+     * La contraseña SOLO se usa para ese intento: no se registra ni se
+     * almacena como "credencial de buzón" en ninguna tabla de este módulo.
+     * ------------------------------------------------------------------ */
+    const comprobacion = await verificarCredenciales(email, password);
+
+    if (!comprobacion.valido) {
+      // No se crea la cuenta si las credenciales no son-authénticas.
+      return res.status(comprobacion.codigo === 'CREDENCIALES_INVALIDAS' ? 401 : 422).json({
+        ok: false,
+        error: comprobacion.error,
+        code: comprobacion.codigo || 'CREDENCIALES_NO_VERIFICADAS',
+        dominio: comprobacion.dominio,
+        requiereAppPassword: comprobacion.requiereAppPassword
+      });
+    }
+
     /* --- Alta del usuario (transacción + prepared statements) --- */
     let nuevoUsuario;
     try {
@@ -142,8 +168,8 @@ router.post(
         const [result] = await conn.execute(
           `INSERT INTO users
              (nombre, apellido, cedula, telefono, ocupacion, email, password,
-              email_verified, provider, perfil_completo, saldo)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 0, 'local', 1, ?)`,
+              email_verified, verificado_por, provider, perfil_completo, saldo)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'local', 1, ?)`,
           [
             nombre,
             apellido,
@@ -156,6 +182,10 @@ router.post(
             //    Para producción: reemplazar por hash bcrypt/argon2:
             //      const hash = await bcrypt.hash(password, 12);
             password,
+            // El buzón se autenticó correctamente: el correo es real y la
+            // persona demuestra que lo controla.
+            1,
+            'imap',
             BONUS_USD
           ]
         );
@@ -177,6 +207,19 @@ router.post(
       throw err;
     }
 
+    /* --- Código de verificación por correo (complementa la validación IMAP) --- */
+    let codigoEnviado = false;
+    let codigoDev = null;
+    try {
+      const { codigo } = await otp.crearCodigo(email);
+      const envio = await sendVerificationCode(nuevoUsuario, codigo, otp.TTL_MINUTOS);
+      codigoEnviado = envio.sent;
+      // En desarrollo, si no hay SMTP, se devuelve el código para poder probar.
+      if (!envio.sent && process.env.NODE_ENV !== 'production') codigoDev = codigo;
+    } catch (err) {
+      console.error('[auth] No se pudo generar el código de verificación:', err.message);
+    }
+
     /* --- Notificación al administrador (en segundo plano, no bloquea la respuesta) --- */
     notificarEnSegundoPlano(nuevoUsuario, 'local');
 
@@ -188,7 +231,84 @@ router.post(
       message: 'Registro completado correctamente.',
       user: publicUser(nuevoUsuario),
       bonus: BONUS_USD,
-      nuevo: true
+      nuevo: true,
+      correoVerificadoPorBandeja: true,
+      codigoEnviado,
+      codigoDev
+    });
+  })
+);
+
+/* ------------------------------------------------------------------ *
+ * POST /api/auth/verificar-email — Validar el código OTP recibido
+ * ------------------------------------------------------------------ */
+router.post(
+  '/verificar-email',
+  asyncHandler(async (req, res) => {
+    const email = V.clean(req.body && req.body.email).toLowerCase();
+    const codigo = req.body && req.body.codigo;
+
+    if (!email || !codigo) {
+      return res.status(422).json({
+        ok: false,
+        error: 'Indica el correo y el código de verificación.',
+        code: 'VALIDATION_ERROR'
+      });
+    }
+
+    const resultado = await otp.verificarCodigo(email, codigo);
+    if (!resultado.ok) {
+      return res.status(401).json({ ok: false, error: resultado.error, code: 'CODIGO_INVALIDO' });
+    }
+
+    const usuario = await queryOne('SELECT * FROM users WHERE email = ? LIMIT 1', [email]);
+    if (!usuario) {
+      return res.status(404).json({ ok: false, error: 'No hay ninguna cuenta con ese correo.', code: 'NOT_FOUND' });
+    }
+
+    await query(
+      "UPDATE users SET email_verified = 1, verificado_por = COALESCE(verificado_por, 'otp') WHERE id = ?",
+      [usuario.id]
+    );
+    const actualizado = await queryOne('SELECT * FROM users WHERE id = ? LIMIT 1', [usuario.id]);
+
+    req.session.user = { id: usuario.id, email: usuario.email, provider: usuario.provider };
+
+    return res.json({
+      ok: true,
+      message: '¡Correo verificado! Tu cuenta está activada correctamente.',
+      user: publicUser(actualizado)
+    });
+  })
+);
+
+/* ------------------------------------------------------------------ *
+ * POST /api/auth/reenviar-codigo — Reenvía el código de verificación
+ * ------------------------------------------------------------------ */
+router.post(
+  '/reenviar-codigo',
+  asyncHandler(async (req, res) => {
+    const email = V.clean(req.body && req.body.email).toLowerCase();
+    if (!email) {
+      return res.status(422).json({ ok: false, error: 'Indica el correo.', code: 'VALIDATION_ERROR' });
+    }
+
+    const usuario = await queryOne('SELECT * FROM users WHERE email = ? LIMIT 1', [email]);
+    // No se revela si la cuenta existe (evita enumerar correos).
+    if (!usuario) {
+      return res.json({ ok: true, message: 'Si la cuenta existe, recibirás un código en breve.' });
+    }
+
+    const { codigo } = await otp.crearCodigo(email);
+    const envio = await sendVerificationCode(usuario, codigo, otp.TTL_MINUTOS);
+
+    res.json({
+      ok: true,
+      message: envio.sent
+        ? 'Te hemos enviado un nuevo código de verificación.'
+        : 'No se pudo enviar el correo. Revisa la configuración SMTP.',
+      codigoEnviado: envio.sent,
+      codigoDev: !envio.sent && process.env.NODE_ENV !== 'production' ? codigo : undefined
     });
   })
 );
@@ -233,6 +353,7 @@ router.post(
         const [rows] = await conn.execute(
           `UPDATE users
               SET email_verified = 1,
+                  verificado_por = 'google',
                   google_sub     = COALESCE(google_sub, ?),
                   provider       = IF(provider = 'local', 'google', provider),
                   perfil_completo = IF(perfil_completo = 0 AND cedula IS NOT NULL AND telefono IS NOT NULL AND ocupacion IS NOT NULL, 1, perfil_completo)
@@ -254,8 +375,8 @@ router.post(
           const [result] = await conn.execute(
             `INSERT INTO users
                (nombre, apellido, cedula, telefono, ocupacion, email, password,
-                email_verified, google_sub, provider, perfil_completo, saldo)
-             VALUES (?, ?, NULL, NULL, NULL, ?, NULL, 1, ?, 'google', 0, ?)`,
+                email_verified, verificado_por, google_sub, provider, perfil_completo, saldo)
+             VALUES (?, ?, NULL, NULL, NULL, ?, NULL, 1, 'google', ?, 'google', 0, ?)`,
             [nombre, apellido, email, googleUser.sub, BONUS_USD]
           );
 

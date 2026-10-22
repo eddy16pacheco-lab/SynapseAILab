@@ -133,6 +133,28 @@ async function main() {
     await conn.end();
   }
 
+  // --- Paso 2b: migraciones (idempotentes) ---
+  const MIGRATIONS_FILE = path.join(__dirname, '..', 'sql', 'migrations.sql');
+  if (fs.existsSync(MIGRATIONS_FILE)) {
+    const conn2 = await mysql.createConnection(dbConfig);
+    try {
+      const migraciones = splitStatements(fs.readFileSync(MIGRATIONS_FILE, 'utf8'));
+      let aplicadas = 0;
+      for (const st of migraciones) {
+        try {
+          await conn2.query(st);
+          aplicadas += 1;
+        } catch (err) {
+          // "Duplicate column" / "Duplicate key name" = ya estaba aplicado.
+          if (!/Duplicate column name|Duplicate key name/i.test(err.message)) throw err;
+        }
+      }
+      if (aplicadas) console.log(`[db:init] ${aplicadas} migraciones aplicadas.`);
+    } finally {
+      await conn2.end();
+    }
+  }
+
   // --- Paso 3: verificación final ---
   const check = await mysql.createConnection(dbConfig);
   try {

@@ -197,11 +197,21 @@
   }
 
   /* ------------------------------------------------------------------ *
-   * Google Identity Services
+   * Google Identity Services (opcional)
    * ------------------------------------------------------------------ */
   var googleReady = false;
+  var GOOGLE_ENABLED = true;
 
   function initGoogle() {
+    if (!GOOGLE_ENABLED) {
+      // El botón y su separador se retiran del DOM: sin sugerencias de Google.
+      var block = $('#googleBlock');
+      var divider = $('#googleDivider');
+      if (block) block.remove();
+      if (divider) divider.remove();
+      return;
+    }
+
     if (!CONFIG.googleClientId) {
       googleHint.textContent = 'Configura GOOGLE_CLIENT_ID en el archivo .env para habilitar el acceso con Google.';
       googleHint.classList.add('google-block__hint--error');
@@ -274,6 +284,73 @@
   }
 
   /* ------------------------------------------------------------------ *
+   * Verificación por código OTP
+   * ------------------------------------------------------------------ */
+  function otpMessage(text, kind) {
+    var el = $('#otpMessage');
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = 'otp-message' + (kind ? ' otp-message--' + kind : '');
+  }
+
+  function handleOtpSubmit(event) {
+    event.preventDefault();
+
+    var input = $('#otpCode');
+    var btn = $('#otpBtn');
+    var email = $('#otpEmail');
+    var codigo = input ? input.value.replace(/\D/g, '') : '';
+
+    if (!/^\d{6}$/.test(codigo)) {
+      otpMessage('El código debe tener 6 dígitos.', 'error');
+      if (input) input.focus();
+      return;
+    }
+
+    setLoading(btn, true);
+    otpMessage('Verificando…', 'info');
+
+    api('/api/auth/verificar-email', {
+      method: 'POST',
+      body: { email: email ? email.textContent : '', codigo: codigo }
+    })
+      .then(function (data) {
+        setLoading(btn, false);
+        otpMessage(data.message || '¡Correo verificado!', 'ok');
+        if (input) input.value = '';
+        showWelcome(data.user, false);
+        toast('¡Correo verificado! Tu cuenta está activa.', 'success');
+      })
+      .catch(function (err) {
+        setLoading(btn, false);
+        otpMessage(err.message || 'El código no es válido.', 'error');
+      });
+  }
+
+  function handleResend() {
+    var btn = $('#otpResendBtn');
+    var email = $('#otpEmail');
+    if (!email) return;
+
+    btn.disabled = true;
+    otpMessage('Enviando…', 'info');
+
+    api('/api/auth/reenviar-codigo', {
+      method: 'POST',
+      body: { email: email.textContent }
+    })
+      .then(function (data) {
+        btn.disabled = false;
+        otpMessage(data.message || 'Si la cuenta existe, recibirás un código en breve.', 'info');
+        if (data.codigoDev) otpMessage('Modo desarrollo: tu código es ' + data.codigoDev, 'info');
+      })
+      .catch(function (err) {
+        btn.disabled = false;
+        otpMessage(err.message || 'No se pudo reenviar el código.', 'error');
+      });
+  }
+
+  /* ------------------------------------------------------------------ *
    * Pantalla de bienvenida
    * ------------------------------------------------------------------ */
   function showWelcome(user, isNew) {
@@ -308,7 +385,32 @@
 
     // Aviso de verificación con Google (solo cuentas creadas por formulario).
     var verifyBlock = $('#verifyBlock');
-    if (verifyBlock) verifyBlock.hidden = !!user.emailVerified;
+    if (verifyBlock) {
+      verifyBlock.hidden = !!user.emailVerified || !GOOGLE_ENABLED;
+      if (verifyBlock.hidden && verifyBlock.parentNode) {
+        verifyBlock.parentNode.style.display = 'none';
+      }
+    }
+
+    // Bloque de verificación por código OTP.
+    var otpBlock = $('#otpBlock');
+    if (otpBlock) {
+      var necesitaOtp = !user.emailVerified;
+      otpBlock.hidden = !necesitaOtp;
+      var otpEmail = $('#otpEmail');
+      if (otpEmail) otpEmail.textContent = user.email || '—';
+    }
+
+    var mailCheck = $('#w-mailCheck');
+    if (mailCheck) {
+      if (user.correoVerificadoPorBandeja) {
+        mailCheck.textContent = 'Correo y contraseña comprobados';
+        mailCheck.className = 'badge badge--ok';
+      } else {
+        mailCheck.textContent = 'Pendiente';
+        mailCheck.className = 'badge badge--warn';
+      }
+    }
 
     // Perfil incompleto (cuentas creadas únicamente con Google).
     var profileBlock = $('#profileBlock');
@@ -532,6 +634,19 @@
     var profileForm = $('#profileForm');
     if (profileForm) profileForm.addEventListener('submit', handleProfileSubmit);
 
+    var otpForm = $('#otpForm');
+    if (otpForm) otpForm.addEventListener('submit', handleOtpSubmit);
+
+    var otpResend = $('#otpResendBtn');
+    if (otpResend) otpResend.addEventListener('click', handleResend);
+
+    var otpInput = $('#otpCode');
+    if (otpInput) {
+      otpInput.addEventListener('input', function () {
+        otpInput.value = otpInput.value.replace(/\D/g, '').slice(0, 6);
+      });
+    }
+
     var dashboardBtn = $('#dashboardBtn');
     if (dashboardBtn) dashboardBtn.addEventListener('click', openDashboard);
 
@@ -574,6 +689,7 @@
         CONFIG.googleClientId = data.googleClientId || '';
         CONFIG.bonusUsd = data.bonusUsd || 1;
         CONFIG.bonusTexto = data.bonusTexto || '$1.00 USD';
+        GOOGLE_ENABLED = data.googleSignInEnabled !== false;
 
         var bonusForm = $('#bonusLabelForm');
         if (bonusForm) bonusForm.textContent = CONFIG.bonusTexto;

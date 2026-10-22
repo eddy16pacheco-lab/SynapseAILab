@@ -31,13 +31,14 @@ const state = {
   users: [],
   movimientos: [],
   bitacora: [],
+  otp: [],
   nextId: 1
 };
 
 const KEYS = [
   'id', 'nombre', 'apellido', 'cedula', 'telefono', 'ocupacion', 'email',
-  'password', 'email_verified', 'google_sub', 'provider', 'perfil_completo',
-  'saldo', 'activo', 'created_at', 'updated_at'
+  'password', 'email_verified', 'verificado_por', 'google_sub', 'provider',
+  'perfil_completo', 'saldo', 'activo', 'created_at', 'updated_at'
 ];
 
 function row(user) {
@@ -100,6 +101,7 @@ async function exec(sql, params = []) {
       email: rec.email,
       password: rec.password === 'NULL' ? null : rec.password,
       email_verified: Number(rec.email_verified),
+      verificado_por: rec.verificado_por === 'NULL' ? null : rec.verificado_por,
       google_sub: rec.google_sub === 'NULL' ? null : rec.google_sub,
       provider: rec.provider,
       perfil_completo: Number(rec.perfil_completo),
@@ -110,6 +112,16 @@ async function exec(sql, params = []) {
     };
     state.users.push(user);
     return { type: 'insert', insertId: user.id, rows: [] };
+  }
+
+  /* --- UPDATE verificado_por (OTP) --- */
+  if (/^UPDATE users SET email_verified = 1, verificado_por = COALESCE/.test(s)) {
+    const u = state.users.find((x) => x.id === params[0]);
+    if (u) {
+      u.email_verified = 1;
+      if (!u.verificado_por) u.verificado_por = 'otp';
+    }
+    return { type: 'update', rows: [] };
   }
 
   /* --- SELECT user por id / email --- */
@@ -166,6 +178,40 @@ async function exec(sql, params = []) {
     return { type: 'select', rows };
   }
 
+  /* --- Tabla de códigos de verificación (OTP) --- */
+  if (/^INSERT INTO codigos_verificacion/i.test(s)) {
+    state.otp.push({
+      id: state.otp.length + 1,
+      email: params[0],
+      codigo_hash: params[1],
+      expira_at: params[2],
+      intentos: 0,
+      usado: 0
+    });
+    return { type: 'insert', insertId: state.otp.length, rows: [] };
+  }
+  if (/^UPDATE codigos_verificacion SET usado = 1 WHERE email = \?/.test(s)) {
+    state.otp.filter((c) => c.email === params[0]).forEach((c) => { c.usado = 1; });
+    return { type: 'update', rows: [] };
+  }
+  if (/^UPDATE codigos_verificacion SET intentos = intentos \+ 1/.test(s)) {
+    const c = state.otp.find((x) => x.id === params[0]);
+    if (c) c.intentos += 1;
+    return { type: 'update', rows: [] };
+  }
+  if (/^UPDATE codigos_verificacion SET usado = 1 WHERE id = \?/.test(s)) {
+    const c = state.otp.find((x) => x.id === params[0]);
+    if (c) c.usado = 1;
+    return { type: 'update', rows: [] };
+  }
+  if (/^SELECT id, codigo_hash, expira_at, intentos, usado/.test(s)) {
+    const c = state.otp.filter((x) => x.email === params[0] && x.usado === 0).pop();
+    return {
+      type: 'select',
+      rows: c ? [{ id: c.id, codigo_hash: c.codigo_hash, expira_at: c.expira_at, intentos: c.intentos, usado: c.usado }] : []
+    };
+  }
+
   /* --- INSERT bitacora_registro --- */
   if (/^INSERT INTO bitacora_registro/i.test(s)) {
     state.bitacora.push({
@@ -212,6 +258,7 @@ require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: m
  * 3. Mock del corrector (nodemailer)
  * ================================================================== */
 const correos = [];
+const codigosEnviados = [];
 const mailerPath = require.resolve('../src/mailer.js');
 require.cache[mailerPath] = {
   id: mailerPath,
@@ -223,6 +270,10 @@ require.cache[mailerPath] = {
       return { sent: true, messageId: 'mock-' + correos.length };
     },
     sendWelcomeToUser: async () => ({ sent: false, skipped: true }),
+    sendVerificationCode: async (user, codigo) => {
+      codigosEnviados.push({ user, codigo });
+      return { sent: true, messageId: 'mock-otp-' + codigosEnviados.length };
+    },
     verifyTransport: async () => ({ configured: true, verified: true })
   }
 };
@@ -575,8 +626,62 @@ test('Intentos de inyección SQL se tratan como datos inválidos', async () => {
   assert.strictEqual(state.users.length, 2, 'la tabla de usuarios sigue intacta');
 });
 
-test('Rutas API desconocidas devuelven JSON 404', async () => {
-  const res = await call('GET', '/api/no-existe');
+test('Registro verifica el buzón real y genera un código OTP', async () => {
+  const codigosAntes = codigosEnviados.length;
+
+  const res = await call('POST', '/api/auth/register', {
+    nombre: 'Lucia',
+    apellido: 'Reyes',
+    cedula: '402-5550001-1',
+    telefono: '8095550111',
+    ocupacion: 'Data Annotator',
+    email: 'lucia@example.com',
+    password: 'SYN#2026Segura'
+  });
+
+  assert.strictEqual(res.status, 201);
+  assert.strictEqual(res.json.correoVerificadoPorBandeja, true, 'el buzón se comprobó');
+  assert.strictEqual(res.json.user.verificadoPor, 'imap');
+  assert.strictEqual(res.json.user.emailVerified, true);
+  assert.strictEqual(res.json.codigoEnviado, true);
+
+  await waitFor(() => codigosEnviados.length === codigosAntes + 1);
+  const enviado = codigosEnviados[codigosEnviados.length - 1];
+  assert.strictEqual(enviado.user.email, 'lucia@example.com');
+  assert.match(enviado.codigo, /^\d{6}$/, 'el código OTP tiene 6 dígitos');
+});
+
+test('El código OTP correcto activa la cuenta', async () => {
+  const codigo = codigosEnviados[codigosEnviados.length - 1].codigo;
+
+  const res = await call('POST', '/api/auth/verificar-email', {
+    email: 'lucia@example.com',
+    codigo
+  });
+
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.json.ok, true);
+  assert.strictEqual(res.json.user.emailVerified, true);
+  assert.match(res.json.message, /verificado/i);
+});
+
+test('Un código OTP incorrecto se rechaza', async () => {
+  const res = await call('POST', '/api/auth/verificar-email', {
+    email: 'lucia@example.com',
+    codigo: '000000'
+  });
+  assert.strictEqual(res.status, 401);
+  assert.strictEqual(res.json.code, 'CODIGO_INVALIDO');
+});
+
+test('Reenviar código no revela si la cuenta existe', async () => {
+  const res = await call('POST', '/api/auth/reenviar-codigo', { email: 'no-existe@example.com' });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.json.ok, true);
+  assert.match(res.json.message, /Si la cuenta existe/i);
+});
+
+test('Rutas API desconocidas devuelven JSON 404', async () => {  const res = await call('GET', '/api/no-existe');
   assert.strictEqual(res.status, 404);
   assert.strictEqual(res.json.code, 'NOT_FOUND');
 });
