@@ -21,13 +21,13 @@ async function main() {
   console.log('[db:check] Movimientos de saldo  :', moves[0].total);
 
   const log = await query(
-    'SELECT email, origen, correo_enviado, created_at FROM bitacora_registro ORDER BY id DESC LIMIT 5'
+    'SELECT email, correo_enviado, created_at FROM bitacora_registro ORDER BY id DESC LIMIT 5'
   );
   if (log.length) {
     console.log('[db:check] Últimos registros:');
     log.forEach((r) => {
       console.log(
-        `   - ${r.created_at} | ${r.email} | ${r.origen} | admin notificado: ${r.correo_enviado ? 'sí' : 'no'}`
+        `   - ${r.created_at} | ${r.email} | admin notificado: ${r.correo_enviado ? 'sí' : 'no'}`
       );
     });
   }

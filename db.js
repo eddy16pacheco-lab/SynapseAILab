@@ -47,7 +47,8 @@ const dbConfig = {
   password: pick('DB_PASSWORD', 'MYSQL_PASSWORD', 'PASSWORD') || '',
   database: pick('DB_NAME', 'MYSQL_DATABASE', 'DATABASE') || 'synapseai_lab',
   waitForConnections: true,
-  connectionLimit: pickInt(['DB_POOL_SIZE'], 10),
+  // En Vercel cada instancia serverless abre su propio pool: se usa uno pequeño.
+  connectionLimit: pickInt(['DB_POOL_SIZE'], process.env.VERCEL ? 2 : 10),
   queueLimit: 0,
   charset: 'utf8mb4_unicode_ci',
   timezone: 'Z',

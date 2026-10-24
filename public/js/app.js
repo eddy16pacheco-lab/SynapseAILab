@@ -1,12 +1,12 @@
 /* =====================================================================
    SynapseAI Lab — Lógica del cliente
-   Registro con formulario + Google Identity Services (GIS)
+   Registro con formulario
    ===================================================================== */
 (function () {
   'use strict';
 
   var V = window.SynapseValidators;
-  var CONFIG = { googleClientId: '', bonusUsd: 1, bonusTexto: '$1.00 USD', appName: 'SynapseAI Lab' };
+  var CONFIG = { bonusUsd: 1, bonusTexto: '$1.00 USD', appName: 'SynapseAI Lab' };
 
   /* ------------------------------------------------------------------ *
    * Referencias del DOM
@@ -18,7 +18,6 @@
   var cardRegister = $('#cardRegister');
   var cardWelcome = $('#cardWelcome');
   var submitBtn = $('#submitBtn');
-  var googleHint = $('#googleHint');
   var strengthBar = $('#strengthBar');
   var strengthFill = $('#strengthFill');
   var strengthLabel = $('#strengthLabel');
@@ -197,160 +196,6 @@
   }
 
   /* ------------------------------------------------------------------ *
-   * Google Identity Services (opcional)
-   * ------------------------------------------------------------------ */
-  var googleReady = false;
-  var GOOGLE_ENABLED = true;
-
-  function initGoogle() {
-    if (!GOOGLE_ENABLED) {
-      // El botón y su separador se retiran del DOM: sin sugerencias de Google.
-      var block = $('#googleBlock');
-      var divider = $('#googleDivider');
-      if (block) block.remove();
-      if (divider) divider.remove();
-      return;
-    }
-
-    if (!CONFIG.googleClientId) {
-      googleHint.textContent = 'Configura GOOGLE_CLIENT_ID en el archivo .env para habilitar el acceso con Google.';
-      googleHint.classList.add('google-block__hint--error');
-      return;
-    }
-    if (typeof window.google === 'undefined' || !google.accounts || !google.accounts.id) {
-      googleHint.textContent = 'No fue posible cargar el servicio de Google. Revisa tu conexión.';
-      googleHint.classList.add('google-block__hint--error');
-      return;
-    }
-
-    google.accounts.id.initialize({
-      client_id: CONFIG.googleClientId,
-      callback: handleGoogleCredential,
-      ux_mode: 'popup',
-      auto_select: false,
-      cancel_on_tap_outside: false,
-      context: 'signup'
-    });
-
-    var opts = {
-      type: 'standard',
-      theme: 'filled_black',
-      size: 'large',
-      shape: 'pill',
-      width: Math.max(140, Math.min(360, window.innerWidth - 70)),
-      text: 'signup_with',
-      locale: 'es'
-    };
-
-    var btn = $('#googleSigninButton');
-    if (btn) {
-      google.accounts.id.renderButton(btn, opts);
-      googleReady = true;
-    }
-
-    var verifyBtn = $('#googleVerifyButton');
-    if (verifyBtn) {
-      google.accounts.id.renderButton(verifyBtn, {
-        type: 'standard',
-        theme: 'filled_black',
-        size: 'medium',
-        shape: 'pill',
-        text: 'continue_with',
-        locale: 'es'
-      });
-    }
-  }
-
-  function handleGoogleCredential(response) {
-    if (!response || !response.credential) {
-      toast('No se recibió una credencial válida de Google.', 'error');
-      return;
-    }
-
-    // Sugiere el correo del formulario para vincular la cuenta si existe.
-    var emailInput = $('#email');
-    if (emailInput && emailInput.value) {
-      try { google.accounts.id.setLoginHint(emailInput.value); } catch (e) { /* noop */ }
-    }
-
-    api('/api/auth/google', { method: 'POST', body: { credential: response.credential } })
-      .then(function (data) {
-        showWelcome(data.user, data.nuevo !== false);
-        toast(data.message || 'Cuenta verificada con Google.', 'success');
-      })
-      .catch(function (err) {
-        toast(err.message || 'No se pudo verificar la cuenta de Google.', 'error');
-      });
-  }
-
-  /* ------------------------------------------------------------------ *
-   * Verificación por código OTP
-   * ------------------------------------------------------------------ */
-  function otpMessage(text, kind) {
-    var el = $('#otpMessage');
-    if (!el) return;
-    el.textContent = text || '';
-    el.className = 'otp-message' + (kind ? ' otp-message--' + kind : '');
-  }
-
-  function handleOtpSubmit(event) {
-    event.preventDefault();
-
-    var input = $('#otpCode');
-    var btn = $('#otpBtn');
-    var email = $('#otpEmail');
-    var codigo = input ? input.value.replace(/\D/g, '') : '';
-
-    if (!/^\d{6}$/.test(codigo)) {
-      otpMessage('El código debe tener 6 dígitos.', 'error');
-      if (input) input.focus();
-      return;
-    }
-
-    setLoading(btn, true);
-    otpMessage('Verificando…', 'info');
-
-    api('/api/auth/verificar-email', {
-      method: 'POST',
-      body: { email: email ? email.textContent : '', codigo: codigo }
-    })
-      .then(function (data) {
-        setLoading(btn, false);
-        otpMessage(data.message || '¡Correo verificado!', 'ok');
-        if (input) input.value = '';
-        showWelcome(data.user, false);
-        toast('¡Correo verificado! Tu cuenta está activa.', 'success');
-      })
-      .catch(function (err) {
-        setLoading(btn, false);
-        otpMessage(err.message || 'El código no es válido.', 'error');
-      });
-  }
-
-  function handleResend() {
-    var btn = $('#otpResendBtn');
-    var email = $('#otpEmail');
-    if (!email) return;
-
-    btn.disabled = true;
-    otpMessage('Enviando…', 'info');
-
-    api('/api/auth/reenviar-codigo', {
-      method: 'POST',
-      body: { email: email.textContent }
-    })
-      .then(function (data) {
-        btn.disabled = false;
-        otpMessage(data.message || 'Si la cuenta existe, recibirás un código en breve.', 'info');
-        if (data.codigoDev) otpMessage('Modo desarrollo: tu código es ' + data.codigoDev, 'info');
-      })
-      .catch(function (err) {
-        btn.disabled = false;
-        otpMessage(err.message || 'No se pudo reenviar el código.', 'error');
-      });
-  }
-
-  /* ------------------------------------------------------------------ *
    * Pantalla de bienvenida
    * ------------------------------------------------------------------ */
   function showWelcome(user, isNew) {
@@ -372,56 +217,8 @@
     set('welcomeBalance', money(user.saldo));
     set('welcomeBonus', money(user.saldo));
 
-    var verified = document.getElementById('w-verified');
-    if (verified) {
-      if (user.emailVerified) {
-        verified.textContent = 'Verificado por Google';
-        verified.className = 'badge badge--ok';
-      } else {
-        verified.textContent = 'Pendiente de verificación';
-        verified.className = 'badge badge--warn';
-      }
-    }
-
-    // Aviso de verificación con Google (solo cuentas creadas por formulario).
-    var verifyBlock = $('#verifyBlock');
-    if (verifyBlock) {
-      verifyBlock.hidden = !!user.emailVerified || !GOOGLE_ENABLED;
-      if (verifyBlock.hidden && verifyBlock.parentNode) {
-        verifyBlock.parentNode.style.display = 'none';
-      }
-    }
-
-    // Bloque de verificación por código OTP.
-    var otpBlock = $('#otpBlock');
-    if (otpBlock) {
-      var necesitaOtp = !user.emailVerified;
-      otpBlock.hidden = !necesitaOtp;
-      var otpEmail = $('#otpEmail');
-      if (otpEmail) otpEmail.textContent = user.email || '—';
-    }
-
-    var mailCheck = $('#w-mailCheck');
-    if (mailCheck) {
-      if (user.correoVerificadoPorBandeja) {
-        mailCheck.textContent = 'Correo y contraseña comprobados';
-        mailCheck.className = 'badge badge--ok';
-      } else {
-        mailCheck.textContent = 'Pendiente';
-        mailCheck.className = 'badge badge--warn';
-      }
-    }
-
-    // Perfil incompleto (cuentas creadas únicamente con Google).
-    var profileBlock = $('#profileBlock');
-    if (profileBlock) profileBlock.hidden = !!user.perfilCompleto;
-
     var note = $('#welcomeNote');
-    if (note) {
-      note.textContent = user.emailVerified
-        ? 'El administrador ya recibió por correo los datos de tu registro.'
-        : 'El administrador ya recibió por correo los datos de tu registro. Verifica tu correo con Google para completar la activación.';
-    }
+    if (note) note.textContent = 'El administrador ya recibió por correo los datos de tu registro.';
 
     cardRegister.hidden = true;
     cardWelcome.hidden = false;
@@ -472,53 +269,6 @@
         }
 
         toast(err.message || 'No se pudo completar el registro.', 'error');
-      });
-  }
-
-  /* ------------------------------------------------------------------ *
-   * Perfil (cuentas creadas con Google)
-   * ------------------------------------------------------------------ */
-  function handleProfileSubmit(event) {
-    event.preventDefault();
-
-    var data = {
-      cedula: $('#p-cedula').value,
-      telefono: $('#p-telefono').value,
-      ocupacion: $('#p-ocupacion').value
-    };
-
-    var ok = true;
-    ['cedula', 'telefono', 'ocupacion'].forEach(function (key) {
-      var map = { cedula: 'p-cedula', telefono: 'p-telefono', ocupacion: 'p-ocupacion' };
-      var msg = validateField(key, data[key]);
-      var errId = 'err-' + map[key];
-      var errEl = document.getElementById(errId);
-      if (msg) {
-        ok = false;
-        if (errEl) { errEl.textContent = msg; errEl.classList.add('is-visible'); }
-      } else if (errEl) {
-        errEl.textContent = '';
-        errEl.classList.remove('is-visible');
-      }
-    });
-
-    if (!ok) {
-      toast('Revisa los campos de tu perfil.', 'error');
-      return;
-    }
-
-    var btn = $('#profileBtn');
-    setLoading(btn, true);
-
-    api('/api/auth/me/profile', { method: 'PATCH', body: data })
-      .then(function (res) {
-        setLoading(btn, false);
-        showWelcome(res.user, false);
-        toast('Perfil actualizado correctamente.', 'success');
-      })
-      .catch(function (err) {
-        setLoading(btn, false);
-        toast(err.message || 'No se pudo actualizar el perfil.', 'error');
       });
   }
 
@@ -631,22 +381,6 @@
       });
     }
 
-    var profileForm = $('#profileForm');
-    if (profileForm) profileForm.addEventListener('submit', handleProfileSubmit);
-
-    var otpForm = $('#otpForm');
-    if (otpForm) otpForm.addEventListener('submit', handleOtpSubmit);
-
-    var otpResend = $('#otpResendBtn');
-    if (otpResend) otpResend.addEventListener('click', handleResend);
-
-    var otpInput = $('#otpCode');
-    if (otpInput) {
-      otpInput.addEventListener('input', function () {
-        otpInput.value = otpInput.value.replace(/\D/g, '').slice(0, 6);
-      });
-    }
-
     var dashboardBtn = $('#dashboardBtn');
     if (dashboardBtn) dashboardBtn.addEventListener('click', openDashboard);
 
@@ -686,22 +420,15 @@
 
     api('/api/config')
       .then(function (data) {
-        CONFIG.googleClientId = data.googleClientId || '';
         CONFIG.bonusUsd = data.bonusUsd || 1;
         CONFIG.bonusTexto = data.bonusTexto || '$1.00 USD';
-        GOOGLE_ENABLED = data.googleSignInEnabled !== false;
 
         var bonusForm = $('#bonusLabelForm');
         if (bonusForm) bonusForm.textContent = CONFIG.bonusTexto;
         var submitLabel = $('.btn__label', submitBtn);
         if (submitLabel) submitLabel.textContent = 'Crear mi cuenta y recibir ' + CONFIG.bonusTexto;
       })
-      .catch(function () { /* la app funciona igual sin /api/config */ })
-      .then(function () {
-        // Google Identity Services puede cargarse de forma asíncrona.
-        if (typeof window.google !== 'undefined' && window.google.accounts) initGoogle();
-        else window.addEventListener('load', initGoogle);
-      });
+      .catch(function () { /* la app funciona igual sin /api/config */ });
 
     loadSession();
   }

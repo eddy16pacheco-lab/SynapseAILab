@@ -47,9 +47,6 @@ services:
         sync: false
       - key: DB_NAME
         sync: false
-      # --- Google Identity Services ---
-      - key: GOOGLE_CLIENT_ID
-        sync: false
       # --- SMTP (Brevo / Gmail) ---
       - key: SMTP_HOST
         sync: false

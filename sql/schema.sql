@@ -1,6 +1,6 @@
 -- =====================================================================
 --  SynapseAI Lab — Esquema de base de datos (MySQL 8 / Aiven Cloud)
---  Saldo predeterminado: 1.00 USD (bono de bienvenida)
+--  Saldo predeterminado: 1.00 USD (bono de bienvenida).
 -- =====================================================================
 
 CREATE DATABASE IF NOT EXISTS `synapseai_lab`
@@ -20,14 +20,9 @@ CREATE TABLE IF NOT EXISTS `users` (
   `telefono`       VARCHAR(32)  DEFAULT NULL,
   `ocupacion`      VARCHAR(120) DEFAULT NULL,
   `email`          VARCHAR(190) NOT NULL,
-  -- ⚠️ PROTOTIPO ACADÉMICO: la contraseña se almacena en TEXTO PLANO.
-  -- En producción debe ser bcrypt (cost >= 12) o Argon2id.
-  `password`       TEXT         DEFAULT NULL,
-  `email_verified` TINYINT(1)   NOT NULL DEFAULT 0,
-  `verificado_por` VARCHAR(16)  DEFAULT NULL, -- 'imap' | 'google' | 'otp'
-  `google_sub`     VARCHAR(255) DEFAULT NULL,
-  `provider`       ENUM('local','google') NOT NULL DEFAULT 'local',
-  `perfil_completo` TINYINT(1)  NOT NULL DEFAULT 0,
+  -- La contraseña se almacena en TEXTO PLANO (sin hash ni cifrado), tal cual
+  -- la escribe el usuario.
+  `password`       TEXT         NOT NULL,
   `saldo`          DECIMAL(12,2) NOT NULL DEFAULT 1.00,
   `activo`         TINYINT(1)   NOT NULL DEFAULT 1,
   `created_at`     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -35,7 +30,6 @@ CREATE TABLE IF NOT EXISTS `users` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_users_email`  (`email`),
   UNIQUE KEY `uq_users_cedula` (`cedula`),
-  UNIQUE KEY `uq_users_google_sub` (`google_sub`),
   KEY `idx_users_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -57,30 +51,12 @@ CREATE TABLE IF NOT EXISTS `movimientos_saldo` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------
--- Códigos de verificación de correo (OTP de un solo uso)
--- El código NUNCA se guarda en claro: solo su hash SHA-256.
--- ---------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS `codigos_verificacion` (
-  `id`         INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `email`      VARCHAR(190) NOT NULL,
-  `codigo_hash` CHAR(64) NOT NULL,
-  `expira_at`  DATETIME NOT NULL,
-  `intentos`   TINYINT UNSIGNED NOT NULL DEFAULT 0,
-  `usado`      TINYINT(1) NOT NULL DEFAULT 0,
-  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `idx_cv_email` (`email`),
-  KEY `idx_cv_expira` (`expira_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- ---------------------------------------------------------------------
 -- Bitácora de registro: traza si el correo al administrador se envió
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `bitacora_registro` (
   `id`           INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `user_id`      INT UNSIGNED DEFAULT NULL,
   `email`        VARCHAR(190) NOT NULL,
-  `origen`       ENUM('local','google') NOT NULL DEFAULT 'local',
   `correo_enviado` TINYINT(1) NOT NULL DEFAULT 0,
   `correo_error` TEXT DEFAULT NULL,
   `created_at`   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

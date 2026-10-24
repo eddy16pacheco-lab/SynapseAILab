@@ -15,7 +15,6 @@ Guía paso a paso para poner la aplicación en línea con **$0 de costo**, usand
 | Aplicación (alt.) | **Koyeb Free** | 512 MB RAM · 0.1 vCPU · 2 GB SSD · 1 por organización · escala a 0 tras 1 h | Ver nota ⚠ |
 | Correo SMTP | **Brevo Free** | 300 correos/día · SMTP relay incluido | **No** |
 | Correo (alt.) | **Gmail SMTP** | ~500/día · requiere verificación en 2 pasos y contraseña de aplicación | No |
-| Identidad | **Google Cloud OAuth 2.0** | Cliente web gratuito e ilimitado | No (salvo que pida verificación) |
 
 > ⚠️ **Koyeb**: desde febrero de 2026 algunas cuentas nuevas exigen una tarjeta con
 > pre-autorización de $29 aunque el servicio sea gratuito. **Render** no pide tarjeta.
@@ -133,26 +132,13 @@ npm run smtp:check
 
 ---
 
-## 5. Google Identity Services (botón "Registrarse con Google")
+## 5. Credenciales y secretos
 
-> ⚠️ **Antes de continuar**: asegúrate de que `.env.example` **no** contiene tus
-> credenciales reales. Ese archivo se sube al repositorio y GitHub bloquea el
-> push con `GH013: Push cannot contain secrets` si detecta una contraseña de
-> Aiven, SMTP, etc. Tus valores reales van en `.env` (ignorado por Git) o en el
-> panel de variables de Render/Koyeb.
-
-1. <https://console.cloud.google.com/> → crea un proyecto.
-2. **APIs y servicios → Biblioteca** → habilita **Google Identity Services**.
-3. **APIs y servicios → Credenciales → Crear credenciales → ID de cliente OAuth 2.0**
-   → **Aplicación web**.
-4. **Orígenes JavaScript autorizados**:
-   - `http://localhost:3000` (desarrollo)
-   - `https://synapseai-lab.onrender.com` (producción — el dominio exacto que te
-     dé Render; también sirve `https://*.onrender.com` para subdominios)
-5. Copia el **ID de cliente** a `GOOGLE_CLIENT_ID` en `.env`.
-6. Añade **usuarios de prueba** en la pestaña *Audience* para poder entrar con
-   cuentas que no verifiques (Google exige verificar la app si publicas en
-   pantalla de consentimiento).
+> ⚠️ Asegúrate de que `.env.example` **no** contiene tus credenciales reales.
+> Ese archivo se sube al repositorio y GitHub bloquea el push con
+> `GH013: Push cannot contain secrets` si detecta una contraseña de Aiven,
+> SMTP, etc. Tus valores reales van en `.env` (ignorado por Git) o en el panel
+> de variables de tu plataforma de hosting.
 
 ---
 
@@ -165,7 +151,7 @@ npm run smtp:check
 1. Sube el proyecto a GitHub.
 2. En Render → **New → Blueprint** → selecciona tu repositorio.
 3. Render leerá `render.yaml` y creará el servicio. Rellena las variables
-   marcadas `sync: false` (datos de Aiven, Google y SMTP).
+   marcadas `sync: false` (datos de la base de datos y SMTP).
 4. `SESSION_SECRET` lo genera Render solo (`generateValue: true`).
 5. **Deploy** → en 2–3 minutos tendrás `https://synapseai-lab.onrender.com`.
 
@@ -180,7 +166,7 @@ npm run smtp:check
    | Start Command | `node server.js` |
    | Instance Type | Free |
    | Health Check Path | `/api/health` |
-3. Añade las variables de entorno del §2, §4 y §5, más:
+3. Añade las variables de entorno del §2 y §4, más:
    ```ini
    NODE_ENV=production
    SESSION_STORE=mysql      # ← CRÍTICO en plan gratuito
@@ -254,7 +240,6 @@ DB_USER=avnadmin
 DB_PASSWORD=<la que aparece en Connection>
 DB_NAME=<database name>
 
-GOOGLE_CLIENT_ID=<tu ID de cliente OAuth>
 SMTP_HOST=<host del relay SMTP>
 SMTP_PORT=<puerto del relay SMTP>
 SMTP_USER=<usuario SMTP>
@@ -290,110 +275,44 @@ considera el servicio no saludable**, así que el siguiente paso es mirar los
 
 ---
 
-## 6.2 Opción E — Vercel (serverless)
+## 6.2 Opción E — Vercel (recomendada con TiDB Cloud)
 
-Vercel despliega el proyecto como una **función serverless**. El repositorio ya
-trae lo necesario:
+El proyecto ya está adaptado a Vercel: Express se detecta solo (`server.js`
+exporta la app), los estáticos viven en `public/` (incluido `public/shared/`),
+el correo usa `waitUntil` y los pools de conexión son pequeños en Vercel.
 
-- `api/index.js` → exporta la app de Express como función de Vercel.
-- `vercel.json` → reescribe todas las rutas hacia `/api` e incluye `public/**`
-  en el paquete de la función.
-
-### Pasos
-
-```bash
-# 1) Instala la CLI (una sola vez)
-npm i -g vercel
-
-# 2) Desde la raíz del proyecto
-vercel login
-vercel            # preview
-vercel --prod     # producción
-```
-
-O desde el panel: <https://vercel.com/new> → importa el repo → *Framework
-Preset: Other* → Deploy.
-
-### Variables de entorno (Vercel → Settings → Environment Variables)
+1. **Base de datos:** crea un cluster *Starter* en <https://tidbcloud.com> (gratis,
+   sin tarjeta) y una base `synapseai_lab`. Con las credenciales en tu `.env`
+   local, ejecuta `npm run db:init` y `npm run db:check`.
+2. **GitHub:** sube el proyecto (el `.env` está en `.gitignore`; no lo subas).
+3. **Vercel:** *Add New → Project* → importa el repositorio. Framework: Express
+   (detección automática). No hay Build Command ni Output Directory.
+4. **Variables de entorno** (Settings → Environment Variables):
 
 ```ini
 NODE_ENV=production
-SESSION_STORE=mysql          # OBLIGATORIO: la memoria no persiste en serverless
-SESSION_POOL_SIZE=3
-TRUST_PROXY=1                # hay un proxy delante de la función
-
+SESSION_STORE=mysql          # OBLIGATORIO: Vercel es serverless
+SESSION_SECRET=<cadena larga aleatoria>
+DB_HOST=<host de TiDB>
+DB_PORT=4000
+DB_USER=<usuario con prefijo, ej. xxxx.root>
+DB_PASSWORD=<contraseña>
+DB_NAME=synapseai_lab
 DB_SSL=true
-DB_SSL_REJECT_UNAUTHORIZED=false
-DB_POOL_SIZE=5
-DB_HOST=...   DB_PORT=3306   DB_USER=...   DB_PASSWORD=...   DB_NAME=...
-
-GOOGLE_CLIENT_ID=...
-GOOGLE_SIGNIN_ENABLED=false  # si no quieres el botón de Google
-
-SMTP_HOST=...  SMTP_PORT=587  SMTP_USER=...  SMTP_PASS=...
-ADMIN_EMAIL=admin@synapseailab.com
-
-MAIL_VERIFY_MODE=imap
-OTP_TTL_MINUTOS=10
-OTP_MAX_INTENTOS=5
+DB_SSL_REJECT_UNAUTHORIZED=true
+SMTP_HOST=smtp-relay.brevo.com
+SMTP_PORT=587
+SMTP_USER=<login SMTP de Brevo>
+SMTP_PASS=<clave SMTP>
+ADMIN_EMAIL=<correo del administrador>
+BONUS_USD=1.00
 ```
 
-### Limitaciones de Vercel que debes conocer
+5. **Deploy** y comprueba `https://<tu-proyecto>.vercel.app/api/health`
+   (debe mostrar `"db":"up"`).
 
-| Tema | Detalle |
-|------|---------|
-| **Sesiones** | Con `SESSION_STORE=mysql` sobreviven a los arranques en frío. Sin esto, el usuario pierde la sesión en cada invocación. |
-| **Trabajo en segundo plano** | Tras enviar la respuesta, Vercel puede **congelar** la función. Por eso el aviso al administrador se lanza con `setImmediate` (best-effort) y el **código OTP se espera** (es imprescindible para el registro). |
-| **Tiempo máximo** | `maxDuration: 30` en `vercel.json`. El plan Hobby limita a 60 s con Fluid compute. |
-| **Conexiones a la BD** | Cada invocación abre su propio pool. Usa `DB_POOL_SIZE=5` (Aiven Free limita las conexiones simultáneas). |
-| **Egress** | Las conexiones salientes a la BD y al SMTP se cobran por GB (100 GB/mes incluidos). |
-| **Región** | Por defecto `iad1` (Virginia). Puedes fijar `regions` en `vercel.json`; elige la más cercana a tu Aiven (`eu-central-1` para Frankfurt). |
-
-### Comprobar que funciona
-
-```bash
-curl https://tu-proyecto.vercel.app/api/health
-# {"ok":true,"app":"SynapseAI Lab","db":"up","port":3000,"host":"",
-#  "env":"production","sessionStore":"mysql"}
-```
-
----
-
-## 6.3 Verificación real del buzón (IMAP)
-
-Al registrarse, SynapseAI Lab **se autentica en el servidor IMAP del
-proveedor** con el correo y la contraseña que introduces. Eso demuestra que la
-cuenta de correo es real y que la persona la controla.
-
-| Proveedor | Servidor IMAP | Contraseña |
-|-----------|---------------|------------|
-| Gmail / Googlemail | `imap.gmail.com:993` | **Contraseña de aplicación** (verificación en 2 pasos) |
-| Outlook / Hotmail / Live / MSN | `outlook.office365.com:993` | La normal ✓ |
-| Yahoo / Ymail | `imap.mail.yahoo.com:993` | Contraseña de aplicación |
-| iCloud | `imap.mail.me.com:993` | Contraseña de aplicación |
-
-Variables:
-
-```ini
-MAIL_VERIFY_MODE=imap      # imap = verifica de verdad | off = solo formato
-IMAP_TIMEOUT_MS=10000
-```
-
-**Si el buzón no se puede comprobar** (proveedor no soportado, IMAP
-deshabilitado, error de red), el registro **no se bloquea**: se crea la cuenta
-y se valida con un **código de un solo uso (OTP)** enviado por correo, que se
-introduce en la pantalla de bienvenida.
-
-### ⚠️ Avisos de seguridad
-
-- La contraseña del buzón se usa **solo** para ese intento de autenticación:
-  no se guarda en ninguna tabla de credenciales, ni en los logs.
-- La contraseña **sí** queda en la columna `users.password` en texto plano,
-  porque el enunciado del ejercicio lo pide así. Si en algún momento se quiere
-  corregir, ver §7 del README.
-- Una página que valida contraseñas de terceros puede usarse como **oráculo de
-  credenciales**. Las mitigaciones aplicadas: rate limiting por IP, mensajes
-  de error genéricos y límite de intentos.
+> `vercel.json` replica en los archivos estáticos las cabeceras de seguridad que
+> Helmet ya no puede añadir (el CDN los sirve sin pasar por Express).
 
 ---
 
@@ -449,7 +368,6 @@ curl -X POST https://tu-app.onrender.com/api/auth/register \
 **Checklist manual en el navegador:**
 
 - [ ] El formulario valida en vivo (contraseña débil, correo inválido, etc.).
-- [ ] El botón oficial de Google aparece y abre el popup de Google.
 - [ ] Tras registrarte aparece la pantalla de bienvenida con **$1.00 USD**.
 - [ ] Llega el correo al `ADMIN_EMAIL` con los 6 datos del usuario.
 - [ ] Al recargar la página sigues con la sesión iniciada (requiere `SESSION_STORE=mysql`).
@@ -466,7 +384,6 @@ curl -X POST https://tu-app.onrender.com/api/auth/register \
 | `ER_ACCESS_DENIED_ERROR` al crear la base | Aiven no permite `CREATE DATABASE` | `npm run db:init` lo tolera y usa la base existente |
 | El primer visitante tarda ~1 min | *Cold start* del plan gratuito (instancia dormida) | Normal; se despierta sola tras la primera petición |
 | `getaddrinfo ENOTFOUND` en el log | La BD gratuita de Aiven se apaga por inactividad | El pool de `mysql2` reconecta solo; si persiste, reactiva el servicio desde la consola de Aiven |
-| El botón de Google no aparece | `GOOGLE_CLIENT_ID` vacío o sin reiniciar el servicio | Revisa `/api/config` (debe devolver `googleClientId`) y que la variable esté en el panel del proveedor |
 | `Too many connections` | Exceso de conexiones a Aiven Free | `DB_POOL_SIZE=5` y `SESSION_POOL_SIZE=2` |
 
 ---
@@ -479,7 +396,6 @@ curl -X POST https://tu-app.onrender.com/api/auth/register \
   posterior tarda entre 30 y 60 segundos.
 - El plan gratuito de Aiven puede **suspender el servicio por inactividad**.
 - Brevo: 300 correos/día (de sobra para validar el ejercicio).
-- Google Cloud: crear el ID de cliente OAuth no tiene costo.
 
 Para un proyecto real you'd migrar a un plan de pago (Render $7/mes, Aiven Developer)
 o usar un VPS gratuito de Oracle Cloud Always Free (4 ARM cores / 24 GB RAM).

@@ -40,39 +40,26 @@ const BONUS_USD = Number.parseFloat(process.env.BONUS_USD || '1.00');
 /* ------------------------------------------------------------------ *
  * 1) Configuración de Express
  * ------------------------------------------------------------------ */
-// `trust proxy` para que `req.secure` y `req.ip` reflejen el proxy delante
-// (Render, Koyeb, Vercel, Aiven). En Vercel hay un proxy delante, por eso 1;
-// en local, 0 (no hay proxy).
-const TRUST_PROXY = Number.parseInt(
-  process.env.TRUST_PROXY !== undefined ? process.env.TRUST_PROXY : IS_PROD ? '1' : '0',
-  10
-);
-app.set('trust proxy', TRUST_PROXY);
+app.set('trust proxy', 1);
 app.disable('x-powered-by');
 
 /* ------------------------------------------------------------------ *
- * 2) Cabeceras de seguridad (Helmet) con CSP compatible con
- *    Google Identity Services (accounts.google.com / gstatic.com)
+ * 2) Cabeceras de seguridad (Helmet) con CSP estricta (solo recursos propios)
  * ------------------------------------------------------------------ */
 app.use(
   helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: [
-          "'self'",
-          'https://accounts.google.com',
-          'https://accounts.gstatic.com',
-          'https://ssl.gstatic.com'
-        ],
-        styleSrc: ["'self'", "'unsafe-inline'", 'https://accounts.gstatic.com'],
-        imgSrc: ["'self'", 'data:', 'https://*.gstatic.com', 'https://lh3.googleusercontent.com'],
-        connectSrc: ["'self'", 'https://accounts.google.com', 'https://oauth2.googleapis.com'],
-        frameSrc: ['https://accounts.google.com', 'https://*.google.com'],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:'],
+        connectSrc: ["'self'"],
+        frameSrc: ["'none'"],
         fontSrc: ["'self'", 'data:'],
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
-        formAction: ["'self'", 'https://accounts.google.com']
+        formAction: ["'self'"]
       }
     },
     crossOriginEmbedderPolicy: false,
@@ -111,10 +98,10 @@ if (corsOrigins.length) {
 }
 
 /* ------------------------------------------------------------------ *
- * 5) Archivos estáticos (frontend) + validadores compartidos
+ * 5) Archivos estáticos (frontend + validadores compartidos en public/shared)
+ *    En Vercel estos archivos los sirve su CDN directamente desde public/.
  * ------------------------------------------------------------------ */
 app.use(express.static(path.join(__dirname, 'public'), { maxAge: IS_PROD ? '1h' : 0, etag: true }));
-app.use('/shared', express.static(path.join(__dirname, 'shared'), { maxAge: IS_PROD ? '1h' : 0 }));
 
 /* ------------------------------------------------------------------ *
  * 6) Sesión (express-session)
@@ -143,7 +130,7 @@ if (SESSION_STORE === 'mysql') {
       config: {
         ...dbConfig,
         // Pool pequeño: Aiven Free Tier limita el número de conexiones.
-        connectionLimit: Number.parseInt(process.env.SESSION_POOL_SIZE || '3', 10)
+        connectionLimit: Number.parseInt(process.env.SESSION_POOL_SIZE || (process.env.VERCEL ? '1' : '3'), 10)
       },
       table: 'sessions',
       secret: sessionSecret, // cifra el contenido de la sesión en la BD
@@ -205,7 +192,6 @@ const authLimiter = rateLimit({
 
 app.use('/api', globalLimiter);
 app.use('/api/auth/register', authLimiter);
-app.use('/api/auth/google', authLimiter);
 
 /* ------------------------------------------------------------------ *
  * 8) API
@@ -217,10 +203,6 @@ app.get('/api/config', (req, res) => {
     ok: true,
     appName: APP_NAME,
     slogan: SLOGAN,
-    googleClientId: process.env.GOOGLE_CLIENT_ID || '',
-    // Si se desactiva, el frontend retira el botón y el separador de Google
-    // y el registro solo se hace con correo + contraseña del buzón.
-    googleSignInEnabled: String(process.env.GOOGLE_SIGNIN_ENABLED || 'true').toLowerCase() !== 'false',
     bonusUsd: BONUS_USD,
     bonusTexto: `$${BONUS_USD.toFixed(2)} USD`
   });
@@ -252,7 +234,7 @@ app.get('/api/health', async (req, res) => {
 /** Rutas de autenticación y registro. */
 app.use('/api/auth', authRouter);
 
-/** Rutas del usuario en sesión (perfil, movimientos de saldo). */
+/** Rutas del usuario en sesión (datos de la cuenta, movimientos de saldo). */
 app.use('/api/me', meRouter);
 
 /** Cualquier ruta /api desconocida devuelve JSON, no HTML. */
@@ -262,7 +244,9 @@ app.use('/api', notFoundApi);
  * 9) Frontend (SPA: cualquier ruta no-API sirve index.html)
  * ------------------------------------------------------------------ */
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(__dirname, 'public', 'index.html'), (err) => {
+    if (err && !res.headersSent) res.status(404).type('text/plain').send('No encontrado.');
+  });
 });
 
 /* ------------------------------------------------------------------ *
@@ -287,10 +271,6 @@ async function start() {
   } catch (err) {
     console.error('[db] No se pudo conectar con la base de datos:', err.message);
     console.error('[db] Revisa las variables DB_HOST / DB_PORT / DB_USER / DB_PASSWORD / DB_NAME en .env');
-  }
-
-  if (!process.env.GOOGLE_CLIENT_ID) {
-    console.warn('[google] GOOGLE_CLIENT_ID no definido: el botón de Google no podrá renderizarse.');
   }
 
   const onListening = () => {
