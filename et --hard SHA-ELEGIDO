@@ -1,0 +1,16 @@
+[33m5f70c43[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m HEAD@{0}: reset: moving to ORIG_HEAD
+[33m5f70c43[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m HEAD@{1}: reset: moving to HEAD
+[33m5f70c43[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m HEAD@{2}: pull: Merge made by the 'ort' strategy.
+[33m2709212[m HEAD@{3}: commit: Nuevos cambios
+[33m5fccfbd[m HEAD@{4}: commit: Añadir link de dominio
+[33m6e9db99[m HEAD@{5}: commit (amend): Cambio de credenciales de nuevo :v
+[33mcb1783c[m HEAD@{6}: commit: Cambio de credenciales de nuevo :v
+[33m94abe08[m HEAD@{7}: commit: Datos modificados
+[33m43602df[m HEAD@{8}: reset: moving to origin/main
+[33mc52f902[m HEAD@{9}: commit: Cambio de credenciales
+[33m40e817d[m HEAD@{10}: commit: Cambio de credenciales
+[33m685bdf1[m HEAD@{11}: commit: Cambio de credenciales
+[33m43602df[m HEAD@{12}: Branch: renamed refs/heads/main to refs/heads/main
+[33m43602df[m HEAD@{14}: commit: first commit
+[33m5575c7f[m HEAD@{15}: Branch: renamed refs/heads/master to refs/heads/main
+[33m5575c7f[m HEAD@{17}: commit (initial): first commit
